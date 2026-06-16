@@ -47,6 +47,20 @@ function blockToCode(block: Blockly.Block, ctx: CodeContext): string {
       return generateOnMemberJoin(block, ctx);
     case "discord_on_member_remove":
       return generateOnMemberRemove(block, ctx);
+    case "discord_conditional_message":
+      return generateConditionalMessage(block, ctx);
+    case "discord_get_all_servers":
+      return generateGetAllServers(block, ctx);
+    case "discord_get_server_by_name":
+      return generateGetServerByName(block, ctx);
+    case "discord_broadcast_to_servers":
+      return generateBroadcastToServers(block, ctx);
+    case "discord_schedule_task":
+      return generateScheduleTask(block, ctx);
+    case "discord_schedule_daily":
+      return generateScheduleDaily(block, ctx);
+    case "discord_wait":
+      return generateWait(block, ctx);
     case "discord_on_reaction_add":
       return generateOnReactionAdd(block, ctx);
 
@@ -408,4 +422,119 @@ export function generatePythonCode(workspace: Blockly.WorkspaceSvg): string {
   ctx.code.push("bot.run('YOUR_DISCORD_BOT_TOKEN')");
 
   return ctx.code.join("\n");
+}
+
+// ==================== ADVANCED BLOCK GENERATORS ====================
+
+function generateConditionalMessage(block: Blockly.Block, ctx: CodeContext): string {
+  const conditionBlock = block.getInputTargetBlock("CONDITION");
+  const condition = conditionBlock ? blockToCode(conditionBlock, ctx) : "True";
+  const channelBlock = block.getInputTargetBlock("CHANNEL");
+  const channel = channelBlock ? blockToCode(channelBlock, ctx) : "message.channel";
+  const messageBlock = block.getInputTargetBlock("MESSAGE");
+  const message = messageBlock ? blockToCode(messageBlock, ctx) : "''";
+  
+  addLine(ctx, `if ${condition}:`);
+  increaseIndent(ctx);
+  addLine(ctx, `await ${channel}.send(${message})`);
+  decreaseIndent(ctx);
+  
+  return "";
+}
+
+function generateGetAllServers(block: Blockly.Block, ctx: CodeContext): string {
+  return "bot.guilds";
+}
+
+function generateGetServerByName(block: Blockly.Block, ctx: CodeContext): string {
+  const nameBlock = block.getInputTargetBlock("NAME");
+  const name = nameBlock ? blockToCode(nameBlock, ctx) : "''";
+  return `discord.utils.get(bot.guilds, name=${name})`;
+}
+
+function generateBroadcastToServers(block: Blockly.Block, ctx: CodeContext): string {
+  const messageBlock = block.getInputTargetBlock("MESSAGE");
+  const message = messageBlock ? blockToCode(messageBlock, ctx) : "''";
+  
+  addLine(ctx, `for guild in bot.guilds:`);
+  increaseIndent(ctx);
+  addLine(ctx, `if guild.system_channel:`);
+  increaseIndent(ctx);
+  addLine(ctx, `await guild.system_channel.send(${message})`);
+  decreaseIndent(ctx);
+  decreaseIndent(ctx);
+  
+  return "";
+}
+
+function generateScheduleTask(block: Blockly.Block, ctx: CodeContext): string {
+  const intervalBlock = block.getInputTargetBlock("INTERVAL");
+  const interval = intervalBlock ? blockToCode(intervalBlock, ctx) : "60";
+  const statements = block.getInputTargetBlock("DO");
+  
+  addLine(ctx, `@tasks.loop(seconds=${interval})`);
+  addLine(ctx, `async def scheduled_task():`);
+  increaseIndent(ctx);
+  
+  if (statements) {
+    blockToCode(statements, ctx);
+  } else {
+    addLine(ctx, `pass`);
+  }
+  
+  decreaseIndent(ctx);
+  addLine(ctx, `scheduled_task.start()`);
+  
+  // Add import for tasks
+  if (!ctx.code.some(line => line.includes("from discord.ext import tasks"))) {
+    ctx.code.splice(1, 0, "from discord.ext import tasks");
+  }
+  
+  return "";
+}
+
+function generateScheduleDaily(block: Blockly.Block, ctx: CodeContext): string {
+  const timeBlock = block.getInputTargetBlock("TIME");
+  const time = timeBlock ? blockToCode(timeBlock, ctx) : "'00:00'";
+  const statements = block.getInputTargetBlock("DO");
+  
+  addLine(ctx, `@tasks.loop(hours=24)`);
+  addLine(ctx, `async def daily_task():`);
+  increaseIndent(ctx);
+  addLine(ctx, `now = datetime.now().strftime('%H:%M')`);
+  addLine(ctx, `if now == ${time}:`);
+  increaseIndent(ctx);
+  
+  if (statements) {
+    blockToCode(statements, ctx);
+  } else {
+    addLine(ctx, `pass`);
+  }
+  
+  decreaseIndent(ctx);
+  decreaseIndent(ctx);
+  addLine(ctx, `daily_task.start()`);
+  
+  // Add imports
+  if (!ctx.code.some(line => line.includes("from discord.ext import tasks"))) {
+    ctx.code.splice(1, 0, "from discord.ext import tasks");
+  }
+  if (!ctx.code.some(line => line.includes("from datetime import datetime"))) {
+    ctx.code.splice(1, 0, "from datetime import datetime");
+  }
+  
+  return "";
+}
+
+function generateWait(block: Blockly.Block, ctx: CodeContext): string {
+  const secondsBlock = block.getInputTargetBlock("SECONDS");
+  const seconds = secondsBlock ? blockToCode(secondsBlock, ctx) : "1";
+  addLine(ctx, `await asyncio.sleep(${seconds})`);
+  
+  // Add import for asyncio
+  if (!ctx.code.some(line => line.includes("import asyncio"))) {
+    ctx.code.splice(1, 0, "import asyncio");
+  }
+  
+  return "";
 }

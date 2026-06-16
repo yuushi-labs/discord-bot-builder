@@ -451,4 +451,121 @@ export function defineDiscordBlocks() {
   Blockly.JavaScript["discord_get_channel"] = function () {
     return ["message.channel", Blockly.JavaScript.ORDER_ATOMIC];
   };
+
+  // ==================== ADVANCED BLOCKS ====================
+
+  // 条件付きメッセージ送信ブロック
+  Blockly.Blocks["discord_conditional_message"] = {
+    init: function () {
+      this.appendValueInput("CONDITION").setCheck(null).appendField("条件");
+      this.appendValueInput("CHANNEL").setCheck(null).appendField("チャンネル");
+      this.appendValueInput("MESSAGE").setCheck(null).appendField("メッセージ");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(260);
+      this.setTooltip("条件が真の場合、メッセージを送信");
+    },
+  };
+
+  // 複数サーバー対応ブロック
+  Blockly.Blocks["discord_get_all_servers"] = {
+    init: function () {
+      this.appendDummyInput().appendField("全サーバー取得");
+      this.setOutput(true, null);
+      this.setColour(290);
+      this.setTooltip("ボットが参加している全サーバーを取得");
+    },
+  };
+
+  Blockly.Blocks["discord_get_server_by_name"] = {
+    init: function () {
+      this.appendValueInput("NAME").setCheck(null).appendField("サーバー名");
+      this.setOutput(true, null);
+      this.setColour(290);
+      this.setTooltip("名前でサーバーを検索");
+    },
+  };
+
+  Blockly.Blocks["discord_broadcast_to_servers"] = {
+    init: function () {
+      this.appendValueInput("MESSAGE").setCheck(null).appendField("全サーバーにメッセージ送信");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(260);
+      this.setTooltip("全サーバーの指定チャンネルにメッセージを送信");
+    },
+  };
+
+  // スケジュール実行ブロック
+  Blockly.Blocks["discord_schedule_task"] = {
+    init: function () {
+      this.appendValueInput("INTERVAL").setCheck(null).appendField("間隔（秒）");
+      this.appendStatementInput("DO").setCheck(null).appendField("実行内容");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(120);
+      this.setTooltip("指定間隔で定期的にタスクを実行");
+    },
+  };
+
+  Blockly.Blocks["discord_schedule_daily"] = {
+    init: function () {
+      this.appendValueInput("TIME").setCheck(null).appendField("実行時刻（HH:MM）");
+      this.appendStatementInput("DO").setCheck(null).appendField("実行内容");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(120);
+      this.setTooltip("毎日指定時刻にタスクを実行");
+    },
+  };
+
+  Blockly.Blocks["discord_wait"] = {
+    init: function () {
+      this.appendValueInput("SECONDS").setCheck(null).appendField("待機（秒）");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(120);
+      this.setTooltip("指定秒数待機");
+    },
+  };
+
+  // ==================== ADVANCED BLOCK CODE GENERATORS ====================
+
+  Blockly.JavaScript["discord_conditional_message"] = function () {
+    const condition = Blockly.JavaScript.valueToCode(this, "CONDITION", Blockly.JavaScript.ORDER_ATOMIC);
+    const channel = Blockly.JavaScript.valueToCode(this, "CHANNEL", Blockly.JavaScript.ORDER_ATOMIC);
+    const message = Blockly.JavaScript.valueToCode(this, "MESSAGE", Blockly.JavaScript.ORDER_ATOMIC);
+    return `if ${condition}:\n    await ${channel}.send(${message})\n`;
+  };
+
+  Blockly.JavaScript["discord_get_all_servers"] = function () {
+    return ["bot.guilds", Blockly.JavaScript.ORDER_ATOMIC];
+  };
+
+  Blockly.JavaScript["discord_get_server_by_name"] = function () {
+    const name = Blockly.JavaScript.valueToCode(this, "NAME", Blockly.JavaScript.ORDER_ATOMIC);
+    return [`discord.utils.get(bot.guilds, name=${name})`, Blockly.JavaScript.ORDER_ATOMIC];
+  };
+
+  Blockly.JavaScript["discord_broadcast_to_servers"] = function () {
+    const message = Blockly.JavaScript.valueToCode(this, "MESSAGE", Blockly.JavaScript.ORDER_ATOMIC);
+    return `for guild in bot.guilds:\n    if guild.system_channel:\n        await guild.system_channel.send(${message})\n`;
+  };
+
+  Blockly.JavaScript["discord_schedule_task"] = function () {
+    const interval = Blockly.JavaScript.valueToCode(this, "INTERVAL", Blockly.JavaScript.ORDER_ATOMIC);
+    const statements = Blockly.JavaScript.statementToCode(this, "DO");
+    return `@tasks.loop(seconds=${interval})\nasync def scheduled_task():\n${statements}\nscheduled_task.start()\n`;
+  };
+
+  Blockly.JavaScript["discord_schedule_daily"] = function () {
+    const time = Blockly.JavaScript.valueToCode(this, "TIME", Blockly.JavaScript.ORDER_ATOMIC);
+    const statements = Blockly.JavaScript.statementToCode(this, "DO");
+    return `@tasks.loop(hours=24)\nasync def daily_task():\n    now = datetime.now().strftime('%H:%M')\n    if now == ${time}:\n${statements}\ndaily_task.start()\n`;
+  };
+
+  Blockly.JavaScript["discord_wait"] = function () {
+    const seconds = Blockly.JavaScript.valueToCode(this, "SECONDS", Blockly.JavaScript.ORDER_ATOMIC);
+    return `await asyncio.sleep(${seconds})\n`;
+  };
 }
