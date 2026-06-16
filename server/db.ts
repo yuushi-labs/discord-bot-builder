@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import { InsertUser, users, botProjects, discordUserCache, BotProject, DiscordUserCache, InsertBotProject, InsertDiscordUserCache } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -89,4 +89,82 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-// TODO: add feature queries here as your schema grows.
+// Bot Projects
+export async function getBotProjectsByUserId(userId: number): Promise<BotProject[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(botProjects).where(eq(botProjects.userId, userId));
+}
+
+export async function getBotProjectById(projectId: number, userId: number): Promise<BotProject | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db
+    .select()
+    .from(botProjects)
+    .where(and(eq(botProjects.id, projectId), eq(botProjects.userId, userId)))
+    .limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function createBotProject(
+  userId: number,
+  name: string,
+  discordToken: string
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(botProjects).values({
+    userId,
+    name,
+    discordToken,
+  });
+  return result;
+}
+
+export async function updateBotProject(
+  projectId: number,
+  userId: number,
+  data: Partial<Omit<InsertBotProject, "userId">>
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db
+    .update(botProjects)
+    .set(data)
+    .where(and(eq(botProjects.id, projectId), eq(botProjects.userId, userId)));
+}
+
+export async function deleteBotProject(projectId: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db
+    .delete(botProjects)
+    .where(and(eq(botProjects.id, projectId), eq(botProjects.userId, userId)));
+}
+
+// Discord User Cache
+export async function getDiscordUserCache(userId: number): Promise<DiscordUserCache | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db
+    .select()
+    .from(discordUserCache)
+    .where(eq(discordUserCache.userId, userId))
+    .limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function upsertDiscordUserCache(
+  userId: number,
+  discordData: Omit<InsertDiscordUserCache, "userId">
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db
+    .insert(discordUserCache)
+    .values({ userId, ...discordData })
+    .onDuplicateKeyUpdate({
+      set: discordData,
+    });
+}

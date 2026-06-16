@@ -1,10 +1,11 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router } from "./_core/trpc";
+import { publicProcedure, router, protectedProcedure } from "./_core/trpc";
+import { z } from "zod";
+import * as db from "./db";
 
 export const appRouter = router({
-    // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
@@ -17,12 +18,41 @@ export const appRouter = router({
     }),
   }),
 
-  // TODO: add feature routers here, e.g.
-  // todo: router({
-  //   list: protectedProcedure.query(({ ctx }) =>
-  //     db.getUserTodos(ctx.user.id)
-  //   ),
-  // }),
+  projects: router({
+    list: protectedProcedure.query(({ ctx }) =>
+      db.getBotProjectsByUserId(ctx.user.id)
+    ),
+    get: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(({ ctx, input }) =>
+        db.getBotProjectById(input.id, ctx.user.id)
+      ),
+    create: protectedProcedure
+      .input(z.object({
+        name: z.string().min(1).max(255),
+        discordToken: z.string().min(1),
+      }))
+      .mutation(({ ctx, input }) =>
+        db.createBotProject(ctx.user.id, input.name, input.discordToken)
+      ),
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        name: z.string().min(1).max(255).optional(),
+        blocklyWorkspace: z.string().optional(),
+      }))
+      .mutation(({ ctx, input }) =>
+        db.updateBotProject(input.id, ctx.user.id, {
+          name: input.name,
+          blocklyWorkspace: input.blocklyWorkspace,
+        })
+      ),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(({ ctx, input }) =>
+        db.deleteBotProject(input.id, ctx.user.id)
+      ),
+  }),
 });
 
 export type AppRouter = typeof appRouter;
