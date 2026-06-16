@@ -67,13 +67,14 @@ echo -e "${GREEN}✓ ポート $PORT は利用可能です${NC}"
 
 # MySQL 接続確認
 echo -e "${YELLOW}⚠ データベース接続を確認中...${NC}"
-if ! pnpm exec node -e "require('mysql2/promise').createConnection(process.env.DATABASE_URL).then(() => console.log('OK')).catch(() => process.exit(1))" 2>/dev/null; then
-    echo -e "${RED}✗ エラー: データベースに接続できません${NC}"
+if ! timeout 5 pnpm exec node -e "require('mysql2/promise').createConnection(process.env.DATABASE_URL).then(() => process.exit(0)).catch(() => process.exit(1))" 2>/dev/null; then
+    echo -e "${YELLOW}⚠ 警告: データベースに接続できません${NC}"
     echo -e "${YELLOW}DATABASE_URL を確認してください${NC}"
-    exit 1
+    echo -e "${YELLOW}続行しますが、起動時にエラーが発生する可能性があります${NC}"
+    echo ""
+else
+    echo -e "${GREEN}✓ データベース接続を確認しました${NC}"
 fi
-
-echo -e "${GREEN}✓ データベース接続を確認しました${NC}"
 
 # 起動
 echo ""
