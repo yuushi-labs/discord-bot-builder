@@ -396,6 +396,8 @@ export function generatePythonCode(workspace: Blockly.WorkspaceSvg): string {
   // Add imports
   ctx.code.push("import discord");
   ctx.code.push("from discord.ext import commands");
+  ctx.code.push("import asyncio");
+  ctx.code.push("from datetime import datetime");
   ctx.code.push("");
 
   // Add bot initialization
