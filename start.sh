@@ -95,5 +95,23 @@ echo ""
 # トラップを設定してクリーンアップ
 trap 'echo -e "\n${RED}✗ アプリケーションを停止しました${NC}"; exit 0' INT TERM
 
-# 開発サーバーを起動
-NODE_ENV=development pnpm dev
+# バックエンド起動
+echo -e "${BLUE}バックエンドを起動中...${NC}"
+# バックエンド起動
+NODE_ENV=development pnpm dev &
+BACKEND_PID=$!
+
+# バックエンド起動待機
+sleep 3
+
+# フロントエンド起動（client ディレクトリで Vite を直接実行）
+# start.sh の最後の部分を修正
+cd client
+npx vite --host &
+FRONTEND_PID=$!
+cd ..
+
+
+# 両方のプロセスを監視
+wait
+
