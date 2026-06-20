@@ -232,7 +232,7 @@ export function defineDiscordBlocks() {
       this.appendDummyInput().appendField(new Blockly.FieldDropdown([
         ["==", "EQ"],
         ["!=", "NEQ"],
-        [">"] , "GT"],
+        [">", "GT"],
         ["<", "LT"],
         [">=", "GTE"],
         ["<=", "LTE"],
