@@ -15,15 +15,14 @@ export default function Login() {
   }, [user, loading, navigate]);
 
   const handleDiscordLogin = () => {
-    // Discord OAuth URL
     const clientId = import.meta.env.VITE_DISCORD_CLIENT_ID || "";
     if (!clientId) {
       alert("Discord Client ID が設定されていません");
       return;
     }
     const redirectUri = `${window.location.origin}/api/discord/callback`;
-    const scopes = ["identify", "email", "guilds", "guilds.members.read"];
-    
+    const scopes = ["identify", "email"];
+
     const discordAuthUrl = new URL("https://discord.com/api/oauth2/authorize");
     discordAuthUrl.searchParams.set("client_id", clientId);
     discordAuthUrl.searchParams.set("redirect_uri", redirectUri);
