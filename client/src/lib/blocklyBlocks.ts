@@ -346,6 +346,47 @@ export function defineDiscordBlocks() {
     },
   };
 
+
+  Blockly.Blocks["discord_get_message"] = {
+    init: function () {
+      this.appendDummyInput().appendField("メッセージ");
+      this.setOutput(true, null);
+      this.setColour(65);
+    },
+  };
+
+  Blockly.Blocks["discord_get_author"] = {
+    init: function () {
+      this.appendDummyInput().appendField("送信者");
+      this.setOutput(true, null);
+      this.setColour(65);
+    },
+  };
+
+  Blockly.Blocks["discord_get_channel"] = {
+    init: function () {
+      this.appendDummyInput().appendField("チャンネル");
+      this.setOutput(true, null);
+      this.setColour(65);
+    },
+  };
+
+  Blockly.Blocks["discord_get_guild"] = {
+    init: function () {
+      this.appendDummyInput().appendField("サーバー");
+      this.setOutput(true, null);
+      this.setColour(65);
+    },
+  };
+
+  Blockly.Blocks["discord_get_message_content"] = {
+    init: function () {
+      this.appendDummyInput().appendField("メッセージ内容");
+      this.setOutput(true, null);
+      this.setColour(65);
+    },
+  };
+
   // ==================== CODE GENERATORS ====================
 
   JS["discord_on_ready"] = function () {

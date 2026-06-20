@@ -166,8 +166,14 @@ export default function Editor({ params }: { params: { id: string } }) {
     try {
       const code = generatePythonCode(workspace.current);
 
+      const exportCode =
+        `DISCORD_TOKEN = ${JSON.stringify(project.discordToken || "")}\n\n${code}`;
+
       const element = document.createElement("a");
-      element.setAttribute("href", "data:text/plain;charset=utf-8," + encodeURIComponent(code));
+      element.setAttribute(
+        "href",
+        "data:text/plain;charset=utf-8," + encodeURIComponent(exportCode)
+      );
       element.setAttribute("download", `${projectName}.py`);
       element.style.display = "none";
       document.body.appendChild(element);
