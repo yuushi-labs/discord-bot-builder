@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Plus, Trash2, Edit2 } from "lucide-react";
 import { useLocation } from "wouter";
 
@@ -24,6 +24,12 @@ export default function Dashboard() {
   const createMutation = trpc.projects.create.useMutation();
   const deleteMutation = trpc.projects.delete.useMutation();
 
+  useEffect(() => {
+    if (!authLoading && !user) {
+      navigate("/", { replace: true });
+    }
+  }, [user, authLoading, navigate]);
+
   if (authLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -33,7 +39,6 @@ export default function Dashboard() {
   }
 
   if (!user) {
-    navigate("/", { replace: true });
     return null;
   }
 
