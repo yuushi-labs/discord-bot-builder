@@ -31,60 +31,62 @@ export default function Editor({ params }: { params: { id: string } }) {
 
     defineDiscordBlocks();
 
+    const toolboxXml = `
+      <xml>
+        <category name="イベント" colour="230">
+          <block type="discord_on_ready"></block>
+          <block type="discord_on_message"></block>
+          <block type="discord_on_message_edit"></block>
+          <block type="discord_on_message_delete"></block>
+          <block type="discord_on_member_join"></block>
+          <block type="discord_on_member_remove"></block>
+          <block type="discord_on_reaction_add"></block>
+        </category>
+        <category name="アクション" colour="160">
+          <block type="discord_send_message"></block>
+          <block type="discord_send_embed"></block>
+          <block type="discord_edit_message"></block>
+          <block type="discord_delete_message"></block>
+          <block type="discord_add_reaction"></block>
+          <block type="discord_add_role"></block>
+          <block type="discord_remove_role"></block>
+          <block type="discord_ban_member"></block>
+          <block type="discord_kick_member"></block>
+        </category>
+        <category name="条件・ループ" colour="210">
+          <block type="discord_if"></block>
+          <block type="discord_if_else"></block>
+          <block type="discord_for_loop"></block>
+          <block type="discord_while_loop"></block>
+          <block type="discord_comparison"></block>
+          <block type="discord_logic_and"></block>
+          <block type="discord_logic_or"></block>
+          <block type="discord_logic_not"></block>
+        </category>
+        <category name="取得" colour="65">
+          <block type="discord_get_message"></block>
+          <block type="discord_get_author"></block>
+          <block type="discord_get_channel"></block>
+          <block type="discord_get_guild"></block>
+          <block type="discord_get_message_content"></block>
+        </category>
+        <category name="変数" colour="330">
+          <block type="discord_set_variable"></block>
+          <block type="discord_get_variable"></block>
+        </category>
+        <category name="テキスト" colour="160">
+          <block type="discord_text"></block>
+          <block type="discord_number"></block>
+          <block type="discord_string_concat"></block>
+        </category>
+        <category name="ユーティリティ" colour="45">
+          <block type="discord_print"></block>
+        </category>
+      </xml>
+    `;
+
     const workspaceOptions: Blockly.BlocklyOptions = {
-      toolbox: `
-        <xml>
-          <category name="イベント" colour="230">
-            <block type="discord_on_ready"></block>
-            <block type="discord_on_message"></block>
-            <block type="discord_on_message_edit"></block>
-            <block type="discord_on_message_delete"></block>
-            <block type="discord_on_member_join"></block>
-            <block type="discord_on_member_remove"></block>
-            <block type="discord_on_reaction_add"></block>
-          </category>
-          <category name="アクション" colour="160">
-            <block type="discord_send_message"></block>
-            <block type="discord_send_embed"></block>
-            <block type="discord_edit_message"></block>
-            <block type="discord_delete_message"></block>
-            <block type="discord_add_reaction"></block>
-            <block type="discord_add_role"></block>
-            <block type="discord_remove_role"></block>
-            <block type="discord_ban_member"></block>
-            <block type="discord_kick_member"></block>
-          </category>
-          <category name="条件・ループ" colour="210">
-            <block type="discord_if"></block>
-            <block type="discord_if_else"></block>
-            <block type="discord_for_loop"></block>
-            <block type="discord_while_loop"></block>
-            <block type="discord_comparison"></block>
-            <block type="discord_logic_and"></block>
-            <block type="discord_logic_or"></block>
-            <block type="discord_logic_not"></block>
-          </category>
-          <category name="取得" colour="65">
-            <block type="discord_get_message"></block>
-            <block type="discord_get_author"></block>
-            <block type="discord_get_channel"></block>
-            <block type="discord_get_guild"></block>
-            <block type="discord_get_message_content"></block>
-          </category>
-          <category name="変数" colour="330">
-            <block type="discord_set_variable"></block>
-            <block type="discord_get_variable"></block>
-          </category>
-          <category name="テキスト" colour="160">
-            <block type="discord_text"></block>
-            <block type="discord_number"></block>
-            <block type="discord_string_concat"></block>
-          </category>
-          <category name="ユーティリティ" colour="45">
-            <block type="discord_print"></block>
-          </category>
-        </xml>
-      `,
+      toolbox: new DOMParser().parseFromString(toolboxXml, "text/xml").documentElement,
       grid: { spacing: 20, length: 3, colour: "#ccc", snap: true },
       zoom: { controls: true, wheel: true, startScale: 1 },
     };
