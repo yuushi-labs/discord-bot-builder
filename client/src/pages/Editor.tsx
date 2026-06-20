@@ -26,40 +26,11 @@ export default function Editor({ params }: { params: { id: string } }) {
   );
   const updateMutation = trpc.projects.update.useMutation();
 
-  if (authLoading || isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Spinner />
-      </div>
-    );
-  }
-
-  if (!user) {
-    navigate("/", { replace: true });
-    return null;
-  }
-
-  if (!project) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <p className="text-muted-foreground mb-4">プロジェクトが見つかりません</p>
-          <Button onClick={() => navigate("/dashboard", { replace: true })}>
-            ダッシュボードに戻る
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  // Initialize Blockly
   useEffect(() => {
-    if (!blocklyDiv.current) return;
+    if (!blocklyDiv.current || !project) return;
 
-    // Define all custom Discord blocks
     defineDiscordBlocks();
 
-    // Initialize workspace
     const workspaceOptions: Blockly.BlocklyOptions = {
       toolbox: `
         <xml>
@@ -118,10 +89,13 @@ export default function Editor({ params }: { params: { id: string } }) {
       zoom: { controls: true, wheel: true, startScale: 1 },
     };
 
+    if (workspace.current) {
+      workspace.current.dispose();
+    }
+
     workspace.current = Blockly.inject(blocklyDiv.current, workspaceOptions);
     setProjectName(project.name);
 
-    // Load saved workspace
     if (project.blocklyWorkspace) {
       try {
         Blockly.serialization.workspaces.load(
@@ -136,9 +110,36 @@ export default function Editor({ params }: { params: { id: string } }) {
     return () => {
       if (workspace.current) {
         workspace.current.dispose();
+        workspace.current = null;
       }
     };
   }, [project]);
+
+  if (authLoading || isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Spinner />
+      </div>
+    );
+  }
+
+  if (!user) {
+    navigate("/", { replace: true });
+    return null;
+  }
+
+  if (!project) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <p className="text-muted-foreground mb-4">プロジェクトが見つかりません</p>
+          <Button onClick={() => navigate("/dashboard", { replace: true })}>
+            ダッシュボードに戻る
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   const handleSave = async () => {
     if (!workspace.current) return;
@@ -161,10 +162,8 @@ export default function Editor({ params }: { params: { id: string } }) {
 
     setIsExporting(true);
     try {
-      // Generate Python code from Blockly
       const code = generatePythonCode(workspace.current);
 
-      // Create download
       const element = document.createElement("a");
       element.setAttribute("href", "data:text/plain;charset=utf-8," + encodeURIComponent(code));
       element.setAttribute("download", `${projectName}.py`);
