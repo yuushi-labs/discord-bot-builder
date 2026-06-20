@@ -15,14 +15,6 @@ interface DiscordUser {
   avatar?: string;
 }
 
-interface DiscordGuild {
-  id: string;
-  name: string;
-  icon?: string;
-  owner: boolean;
-  permissions: string;
-}
-
 interface DiscordTokenResponse {
   access_token: string;
   token_type: string;
@@ -43,7 +35,7 @@ export async function exchangeDiscordCode(code: string, redirectUri: string): Pr
       code,
       grant_type: "authorization_code",
       redirect_uri: redirectUri,
-      scope: "identify email guilds guilds.members.read",
+      scope: "identify email",
     },
     {
       headers: {
@@ -72,22 +64,6 @@ export async function getDiscordUser(accessToken: string): Promise<DiscordUser> 
 }
 
 /**
- * Get Discord user's guilds
- */
-export async function getDiscordGuilds(accessToken: string): Promise<DiscordGuild[]> {
-  const response = await axios.get<DiscordGuild[]>(
-    `${DISCORD_API_BASE}/users/@me/guilds`,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    }
-  );
-
-  return response.data;
-}
-
-/**
  * Handle Discord OAuth callback
  */
 export async function handleDiscordCallback(req: Request, res: Response) {
@@ -100,42 +76,32 @@ export async function handleDiscordCallback(req: Request, res: Response) {
 
     const redirectUri = `${req.protocol}://${req.get("host")}/api/discord/callback`;
 
-    // Exchange code for token
     const tokenData = await exchangeDiscordCode(code, redirectUri);
-
-    // Get user info
     const discordUser = await getDiscordUser(tokenData.access_token);
 
-    // Get user's guilds
-    const guilds = await getDiscordGuilds(tokenData.access_token);
+    const openId = `discord_${discordUser.id}`;
 
-    // Upsert user in database
     await upsertUser({
-      openId: `discord_${discordUser.id}`,
+      openId,
       name: discordUser.username,
       email: discordUser.email,
       loginMethod: "discord",
       lastSignedIn: new Date(),
     });
 
-    // Create JWT session token
     const secret = new TextEncoder().encode(ENV.jwtSecret);
     const token = await new jose.SignJWT({
-      openId: `discord_${discordUser.id}`,
-      discordId: discordUser.id,
-      username: discordUser.username,
-      email: discordUser.email,
-      guilds: guilds.map((g) => ({ id: g.id, name: g.name })),
+      openId,
+      appId: ENV.discordClientId,
+      name: discordUser.username,
     })
-      .setProtectedHeader({ alg: "HS256" })
+      .setProtectedHeader({ alg: "HS256", typ: "JWT" })
       .setExpirationTime("7d")
       .sign(secret);
 
-    // Set session cookie
     const cookieOptions = getSessionCookieOptions(req);
     res.cookie(COOKIE_NAME, token, cookieOptions);
 
-    // Redirect to dashboard
     return res.redirect("/dashboard");
   } catch (error) {
     console.error("Discord OAuth error:", error);
