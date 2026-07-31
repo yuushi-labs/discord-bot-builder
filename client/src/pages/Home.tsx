@@ -5,7 +5,7 @@ import { getLoginUrl } from "@/const";
 import { useLocation } from "wouter";
 
 export default function Home() {
-  const { user, loading, isAuthenticated } = useAuth();
+  const { user, loading, isAuthenticated, logout } = useAuth();
   const [location, navigate] = useLocation();
 
   if (loading) {
@@ -28,10 +28,7 @@ export default function Home() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => {
-                  const logout = useAuth().logout;
-                  logout?.();
-                }}
+                onClick={() => logout?.()}
               >
                 ログアウト
               </Button>
