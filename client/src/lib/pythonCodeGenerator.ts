@@ -275,8 +275,9 @@ function generateIfElse(block: Blockly.Block, ctx: CodeContext): string {
 }
 
 function generateForLoop(block: Blockly.Block, ctx: CodeContext): string {
-  const list = getInputValue(block, "LIST", ctx);
-  addLine(ctx, `for item in ${list}:`);
+  const count = Number(block.getFieldValue("COUNT") ?? "0");
+  const safeCount = Number.isFinite(count) && count > 0 ? Math.floor(count) : 1;
+  addLine(ctx, `for i in range(${safeCount}):`);
   increaseIndent(ctx);
   getStatements(block, "DO", ctx);
   decreaseIndent(ctx);
@@ -294,7 +295,7 @@ function generateWhileLoop(block: Blockly.Block, ctx: CodeContext): string {
 
 // Variable generators
 function generateSetVariable(block: Blockly.Block, ctx: CodeContext): string {
-  const varName = block.getFieldValue("NAME");
+  const varName = block.getFieldValue("VAR") || "x";
   const value = getInputValue(block, "VALUE", ctx);
   ctx.variables.add(varName);
   addLine(ctx, `${varName} = ${value}`);
@@ -302,7 +303,7 @@ function generateSetVariable(block: Blockly.Block, ctx: CodeContext): string {
 }
 
 function generateGetVariable(block: Blockly.Block, ctx: CodeContext): string {
-  const varName = block.getFieldValue("NAME");
+  const varName = block.getFieldValue("VAR") || "x";
   return varName;
 }
 
@@ -331,8 +332,17 @@ function generateStringConcat(block: Blockly.Block, ctx: CodeContext): string {
 // Comparison and logic generators
 function generateComparison(block: Blockly.Block, ctx: CodeContext): string {
   const a = getInputValue(block, "A", ctx);
-  const op = block.getFieldValue("OP");
+  const opToken = block.getFieldValue("OP");
   const b = getInputValue(block, "B", ctx);
+  const opMap: Record<string, string> = {
+    EQ: "==",
+    NEQ: "!=",
+    GT: ">",
+    LT: "<",
+    GTE: ">=",
+    LTE: "<=",
+  };
+  const op = opMap[opToken] ?? "==";
   return `${a} ${op} ${b}`;
 }
 
