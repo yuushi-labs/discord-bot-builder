@@ -1,5 +1,5 @@
 import * as Blockly from "blockly";
-import { javascriptGenerator } from "blockly/javascript";
+import { javascriptGenerator, Order } from "blockly/javascript";
 
 /**
  * Discord Bot Builder - Blockly Custom Blocks Definition
@@ -389,47 +389,47 @@ export function defineDiscordBlocks() {
 
   // ==================== CODE GENERATORS ====================
 
-  JS["discord_on_ready"] = function () {
-    const statements = JS.statementToCode(this, "DO");
+  JS.forBlock["discord_on_ready"] = function (block, generator) {
+    const statements = generator.statementToCode(block, "DO");
     return `@bot.event\nasync def on_ready():\n${statements}\n`;
   };
 
-  JS["discord_on_message"] = function () {
-    const statements = JS.statementToCode(this, "DO");
+  JS.forBlock["discord_on_message"] = function (block, generator) {
+    const statements = generator.statementToCode(block, "DO");
     return `@bot.event\nasync def on_message(message):\n    if message.author == bot.user:\n        return\n${statements}\n`;
   };
 
-  JS["discord_send_message"] = function () {
-    const channel = JS.valueToCode(this, "CHANNEL", JS.ORDER_ATOMIC);
-    const message = JS.valueToCode(this, "MESSAGE", JS.ORDER_ATOMIC);
+  JS.forBlock["discord_send_message"] = function (block, generator) {
+    const channel = generator.valueToCode(block, "CHANNEL", Order.ATOMIC);
+    const message = generator.valueToCode(block, "MESSAGE", Order.ATOMIC);
     return `await ${channel}.send(${message})\n`;
   };
 
-  JS["discord_print"] = function () {
-    const text = JS.valueToCode(this, "TEXT", JS.ORDER_ATOMIC);
+  JS.forBlock["discord_print"] = function (block, generator) {
+    const text = generator.valueToCode(block, "TEXT", Order.ATOMIC);
     return `print(${text})\n`;
   };
 
-  JS["discord_text"] = function () {
-    const text = this.getFieldValue("TEXT");
-    return [`"${text}"`, JS.ORDER_ATOMIC];
+  JS.forBlock["discord_text"] = function (block) {
+    const text = block.getFieldValue("TEXT");
+    return [`"${text}"`, Order.ATOMIC];
   };
 
-  JS["discord_number"] = function () {
-    const num = this.getFieldValue("NUM");
-    return [num.toString(), JS.ORDER_ATOMIC];
+  JS.forBlock["discord_number"] = function (block) {
+    const num = block.getFieldValue("NUM");
+    return [num.toString(), Order.ATOMIC];
   };
 
-  JS["discord_string_concat"] = function () {
-    const a = JS.valueToCode(this, "A", JS.ORDER_ATOMIC) || "''";
-    const b = JS.valueToCode(this, "B", JS.ORDER_ATOMIC) || "''";
-    return [`${a} + ${b}`, JS.ORDER_OF_ADDITION];
+  JS.forBlock["discord_string_concat"] = function (block, generator) {
+    const a = generator.valueToCode(block, "A", Order.ATOMIC) || "''";
+    const b = generator.valueToCode(block, "B", Order.ATOMIC) || "''";
+    return [`${a} + ${b}`, Order.ADDITION];
   };
 
-  JS["discord_comparison"] = function () {
-    const a = JS.valueToCode(this, "A", JS.ORDER_RELATIONAL) || "0";
-    const b = JS.valueToCode(this, "B", JS.ORDER_RELATIONAL) || "0";
-    const op = this.getFieldValue("OP");
+  JS.forBlock["discord_comparison"] = function (block, generator) {
+    const a = generator.valueToCode(block, "A", Order.RELATIONAL) || "0";
+    const b = generator.valueToCode(block, "B", Order.RELATIONAL) || "0";
+    const op = block.getFieldValue("OP");
     const operators: Record<string, string> = {
       EQ: "==",
       NEQ: "!=",
@@ -438,84 +438,84 @@ export function defineDiscordBlocks() {
       GTE: ">=",
       LTE: "<=",
     };
-    return [`${a} ${operators[op]} ${b}`, JS.ORDER_RELATIONAL];
+    return [`${a} ${operators[op]} ${b}`, Order.RELATIONAL];
   };
 
-  JS["discord_logic_and"] = function () {
-    const a = JS.valueToCode(this, "A", JS.ORDER_LOGICAL_AND) || "False";
-    const b = JS.valueToCode(this, "B", JS.ORDER_LOGICAL_AND) || "False";
-    return [`${a} and ${b}`, JS.ORDER_LOGICAL_AND];
+  JS.forBlock["discord_logic_and"] = function (block, generator) {
+    const a = generator.valueToCode(block, "A", Order.LOGICAL_AND) || "False";
+    const b = generator.valueToCode(block, "B", Order.LOGICAL_AND) || "False";
+    return [`${a} and ${b}`, Order.LOGICAL_AND];
   };
 
-  JS["discord_logic_or"] = function () {
-    const a = JS.valueToCode(this, "A", JS.ORDER_LOGICAL_OR) || "False";
-    const b = JS.valueToCode(this, "B", JS.ORDER_LOGICAL_OR) || "False";
-    return [`${a} or ${b}`, JS.ORDER_LOGICAL_OR];
+  JS.forBlock["discord_logic_or"] = function (block, generator) {
+    const a = generator.valueToCode(block, "A", Order.LOGICAL_OR) || "False";
+    const b = generator.valueToCode(block, "B", Order.LOGICAL_OR) || "False";
+    return [`${a} or ${b}`, Order.LOGICAL_OR];
   };
 
-  JS["discord_logic_not"] = function () {
-    const a = JS.valueToCode(this, "A", JS.ORDER_UNARY_PREFIX) || "False";
-    return [`not ${a}`, JS.ORDER_UNARY_PREFIX];
+  JS.forBlock["discord_logic_not"] = function (block, generator) {
+    const a = generator.valueToCode(block, "A", Order.LOGICAL_NOT) || "False";
+    return [`not ${a}`, Order.LOGICAL_NOT];
   };
 
-  JS["discord_set_variable"] = function () {
-    const variable = this.getFieldValue("VAR");
-    const value = JS.valueToCode(this, "VALUE", JS.ORDER_ASSIGNMENT) || "None";
+  JS.forBlock["discord_set_variable"] = function (block, generator) {
+    const variable = block.getFieldValue("VAR");
+    const value = generator.valueToCode(block, "VALUE", Order.ASSIGNMENT) || "None";
     return `${variable} = ${value}\n`;
   };
 
-  JS["discord_get_variable"] = function () {
-    const variable = this.getFieldValue("VAR");
-    return [variable, JS.ORDER_ATOMIC];
+  JS.forBlock["discord_get_variable"] = function (block) {
+    const variable = block.getFieldValue("VAR");
+    return [variable, Order.ATOMIC];
   };
 
-  JS["discord_if"] = function () {
-    const condition = JS.valueToCode(this, "CONDITION", JS.ORDER_NONE) || "False";
-    const statements = JS.statementToCode(this, "DO");
+  JS.forBlock["discord_if"] = function (block, generator) {
+    const condition = generator.valueToCode(block, "CONDITION", Order.NONE) || "False";
+    const statements = generator.statementToCode(block, "DO");
     return `if ${condition}:\n${statements || "    pass\n"}`;
   };
 
-  JS["discord_if_else"] = function () {
-    const condition = JS.valueToCode(this, "CONDITION", JS.ORDER_NONE) || "False";
-    const doStatements = JS.statementToCode(this, "DO");
-    const elseStatements = JS.statementToCode(this, "ELSE");
+  JS.forBlock["discord_if_else"] = function (block, generator) {
+    const condition = generator.valueToCode(block, "CONDITION", Order.NONE) || "False";
+    const doStatements = generator.statementToCode(block, "DO");
+    const elseStatements = generator.statementToCode(block, "ELSE");
     return `if ${condition}:\n${doStatements || "    pass\n"}else:\n${elseStatements || "    pass\n"}`;
   };
 
-  JS["discord_for_loop"] = function () {
-    const count = this.getFieldValue("COUNT") || 10;
-    const statements = JS.statementToCode(this, "DO");
+  JS.forBlock["discord_for_loop"] = function (block, generator) {
+    const count = block.getFieldValue("COUNT") || 10;
+    const statements = generator.statementToCode(block, "DO");
     return `for i in range(${count}):\n${statements || "    pass\n"}`;
   };
 
-  JS["discord_while_loop"] = function () {
-    const condition = JS.valueToCode(this, "CONDITION", JS.ORDER_NONE) || "False";
-    const statements = JS.statementToCode(this, "DO");
+  JS.forBlock["discord_while_loop"] = function (block, generator) {
+    const condition = generator.valueToCode(block, "CONDITION", Order.NONE) || "False";
+    const statements = generator.statementToCode(block, "DO");
     return `while ${condition}:\n${statements || "    pass\n"}`;
   };
 
-  JS["discord_on_message_edit"] = function () {
-    const statements = JS.statementToCode(this, "DO");
+  JS.forBlock["discord_on_message_edit"] = function (block, generator) {
+    const statements = generator.statementToCode(block, "DO");
     return `@bot.event\nasync def on_message_edit(before, after):\n${statements}\n`;
   };
 
-  JS["discord_on_message_delete"] = function () {
-    const statements = JS.statementToCode(this, "DO");
+  JS.forBlock["discord_on_message_delete"] = function (block, generator) {
+    const statements = generator.statementToCode(block, "DO");
     return `@bot.event\nasync def on_message_delete(message):\n${statements}\n`;
   };
 
-  JS["discord_on_member_join"] = function () {
-    const statements = JS.statementToCode(this, "DO");
+  JS.forBlock["discord_on_member_join"] = function (block, generator) {
+    const statements = generator.statementToCode(block, "DO");
     return `@bot.event\nasync def on_member_join(member):\n${statements}\n`;
   };
 
-  JS["discord_on_member_remove"] = function () {
-    const statements = JS.statementToCode(this, "DO");
+  JS.forBlock["discord_on_member_remove"] = function (block, generator) {
+    const statements = generator.statementToCode(block, "DO");
     return `@bot.event\nasync def on_member_remove(member):\n${statements}\n`;
   };
 
-  JS["discord_on_reaction_add"] = function () {
-    const statements = JS.statementToCode(this, "DO");
+  JS.forBlock["discord_on_reaction_add"] = function (block, generator) {
+    const statements = generator.statementToCode(block, "DO");
     return `@bot.event\nasync def on_reaction_add(reaction, user):\n${statements}\n`;
   };
 }
