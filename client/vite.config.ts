@@ -56,7 +56,7 @@ function writeToLogFile(source: LogSource, entries: unknown[]) {
   const logPath = path.join(LOG_DIR, `${source}.log`);
 
   // Format entries with timestamps
-  const lines = entries.map((entry) => {
+  const lines = entries.map(entry => {
     const ts = new Date().toISOString();
     return `[${ts}] ${JSON.stringify(entry)}`;
   });
@@ -132,7 +132,7 @@ function vitePluginManusDebugCollector(): Plugin {
         }
 
         let body = "";
-        req.on("data", (chunk) => {
+        req.on("data", chunk => {
           body += chunk.toString();
         });
 
@@ -150,14 +150,20 @@ function vitePluginManusDebugCollector(): Plugin {
   };
 }
 
-const plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusRuntime(), vitePluginManusDebugCollector()];
+const plugins = [
+  react(),
+  tailwindcss(),
+  jsxLocPlugin(),
+  vitePluginManusRuntime(),
+  vitePluginManusDebugCollector(),
+];
 
 export default defineConfig({
   plugins,
   resolve: {
     alias: {
-      "@": path.resolve(import.meta.dirname, "src"),  // "client/src" ではなく "src"
-      "@shared": path.resolve(import.meta.dirname, "..", "shared"),  // "../shared"
+      "@": path.resolve(import.meta.dirname, "src"), // "client/src" ではなく "src"
+      "@shared": path.resolve(import.meta.dirname, "..", "shared"), // "../shared"
       "@assets": path.resolve(import.meta.dirname, "..", "attached_assets"),
     },
   },
@@ -184,11 +190,11 @@ export default defineConfig({
       strict: true,
       deny: ["**/.*"],
     },
-　　proxy: {
-      '/api': {
-        target: 'http://localhost:3000',
+    proxy: {
+      "/api": {
+        target: "http://localhost:3000",
         changeOrigin: true,
-       },
+      },
     },
   },
 });

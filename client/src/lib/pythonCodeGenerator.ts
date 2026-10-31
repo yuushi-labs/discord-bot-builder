@@ -2,125 +2,119 @@ import * as Blockly from "blockly";
 
 /**
  * Discord Bot Builder - Python Code Generator
- * Converts Blockly blocks to discord.py compatible Python code
+ * Converts Blockly blocks to discord.py compatible Python code.
  */
 
+const INDENT = "    ";
+
+/** Line buffer that keeps track of indentation explicitly. */
+class CodeWriter {
+  private readonly lines: string[] = [];
+
+  line(level: number, text: string): void {
+    this.lines.push(INDENT.repeat(Math.max(0, level)) + text);
+  }
+
+  get isEmpty(): boolean {
+    return this.lines.length === 0;
+  }
+
+  toString(): string {
+    return this.lines.join("\n");
+  }
+}
+
+interface EventHandler {
+  name: string;
+  params: string;
+  body: CodeWriter;
+}
+
 interface CodeContext {
-  indent: number;
-  code: string[];
+  module: CodeWriter;
+  events: EventHandler[];
+  taskDefs: string[];
+  taskStarts: string[];
   variables: Set<string>;
-  events: string[];
+  usesAsyncio: boolean;
+  usesDatetime: boolean;
+  usesTasks: boolean;
 }
 
-const INDENT_SIZE = 4;
+const EVENT_SIGNATURES: Record<string, { name: string; params: string }> = {
+  discord_on_ready: { name: "on_ready", params: "" },
+  discord_on_message: { name: "on_message", params: "message" },
+  discord_on_message_edit: { name: "on_message_edit", params: "before, after" },
+  discord_on_message_delete: { name: "on_message_delete", params: "message" },
+  discord_on_member_join: { name: "on_member_join", params: "member" },
+  discord_on_member_remove: { name: "on_member_remove", params: "member" },
+  discord_on_reaction_add: {
+    name: "on_reaction_add",
+    params: "reaction, user",
+  },
+};
 
-function getIndent(level: number): string {
-  return " ".repeat(level * INDENT_SIZE);
+function isEventBlock(type: string): boolean {
+  return type in EVENT_SIGNATURES;
 }
 
-function addLine(ctx: CodeContext, line: string): void {
-  ctx.code.push(getIndent(ctx.indent) + line);
+function escapePythonString(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\r?\n/g, "\\n");
 }
 
-function increaseIndent(ctx: CodeContext): void {
-  ctx.indent++;
+function inputExpr(
+  block: Blockly.Block,
+  inputName: string,
+  ctx: CodeContext,
+  fallback: string
+): string {
+  const target = block.getInputTargetBlock(inputName);
+  if (!target) return fallback;
+  return valueBlockToCode(target, ctx) ?? fallback;
 }
 
-function decreaseIndent(ctx: CodeContext): void {
-  ctx.indent = Math.max(0, ctx.indent - 1);
-}
-
-function blockToCode(block: Blockly.Block, ctx: CodeContext): string {
-  const type = block.type;
-
-  switch (type) {
-    // Event blocks
-    case "discord_on_ready":
-      return generateOnReady(block, ctx);
-    case "discord_on_message":
-      return generateOnMessage(block, ctx);
-    case "discord_on_message_edit":
-      return generateOnMessageEdit(block, ctx);
-    case "discord_on_message_delete":
-      return generateOnMessageDelete(block, ctx);
-    case "discord_on_member_join":
-      return generateOnMemberJoin(block, ctx);
-    case "discord_on_member_remove":
-      return generateOnMemberRemove(block, ctx);
-    case "discord_conditional_message":
-      return generateConditionalMessage(block, ctx);
-    case "discord_get_all_servers":
-      return generateGetAllServers(block, ctx);
-    case "discord_get_server_by_name":
-      return generateGetServerByName(block, ctx);
-    case "discord_broadcast_to_servers":
-      return generateBroadcastToServers(block, ctx);
-    case "discord_schedule_task":
-      return generateScheduleTask(block, ctx);
-    case "discord_schedule_daily":
-      return generateScheduleDaily(block, ctx);
-    case "discord_wait":
-      return generateWait(block, ctx);
-    case "discord_on_reaction_add":
-      return generateOnReactionAdd(block, ctx);
-
-    // Action blocks
-    case "discord_send_message":
-      return generateSendMessage(block, ctx);
-    case "discord_send_embed":
-      return generateSendEmbed(block, ctx);
-    case "discord_edit_message":
-      return generateEditMessage(block, ctx);
-    case "discord_delete_message":
-      return generateDeleteMessage(block, ctx);
-    case "discord_add_reaction":
-      return generateAddReaction(block, ctx);
-    case "discord_add_role":
-      return generateAddRole(block, ctx);
-    case "discord_remove_role":
-      return generateRemoveRole(block, ctx);
-    case "discord_ban_member":
-      return generateBanMember(block, ctx);
-    case "discord_kick_member":
-      return generateKickMember(block, ctx);
-
-    // Control flow blocks
-    case "discord_if":
-      return generateIf(block, ctx);
-    case "discord_if_else":
-      return generateIfElse(block, ctx);
-    case "discord_for_loop":
-      return generateForLoop(block, ctx);
-    case "discord_while_loop":
-      return generateWhileLoop(block, ctx);
-
-    // Variable blocks
-    case "discord_set_variable":
-      return generateSetVariable(block, ctx);
-    case "discord_get_variable":
-      return generateGetVariable(block, ctx);
-
-    // Utility blocks
-    case "discord_print":
-      return generatePrint(block, ctx);
-    case "discord_text":
-      return generateText(block);
+/** Render a value (output) block to a Python expression, or null if unknown. */
+function valueBlockToCode(
+  block: Blockly.Block,
+  ctx: CodeContext
+): string | null {
+  switch (block.type) {
+    case "discord_text": {
+      const text = block.getFieldValue("TEXT") ?? "";
+      return `"${escapePythonString(String(text))}"`;
+    }
     case "discord_number":
-      return generateNumber(block);
-    case "discord_string_concat":
-      return generateStringConcat(block, ctx);
-
-    // Comparison and logic blocks
-    case "discord_comparison":
-      return generateComparison(block, ctx);
+      return String(block.getFieldValue("NUM") ?? "0");
+    case "discord_string_concat": {
+      const a = inputExpr(block, "A", ctx, '""');
+      const b = inputExpr(block, "B", ctx, '""');
+      return `${a} + ${b}`;
+    }
+    case "discord_comparison": {
+      const a = inputExpr(block, "A", ctx, "None");
+      const b = inputExpr(block, "B", ctx, "None");
+      const opMap: Record<string, string> = {
+        EQ: "==",
+        NEQ: "!=",
+        GT: ">",
+        LT: "<",
+        GTE: ">=",
+        LTE: "<=",
+      };
+      const op = opMap[block.getFieldValue("OP")] ?? "==";
+      return `${a} ${op} ${b}`;
+    }
     case "discord_logic_and":
-      return generateLogicAnd(block, ctx);
+      return `${inputExpr(block, "A", ctx, "False")} and ${inputExpr(block, "B", ctx, "False")}`;
     case "discord_logic_or":
-      return generateLogicOr(block, ctx);
+      return `${inputExpr(block, "A", ctx, "False")} or ${inputExpr(block, "B", ctx, "False")}`;
     case "discord_logic_not":
-      return generateLogicNot(block, ctx);
-
-    // Getter blocks
+      return `not ${inputExpr(block, "A", ctx, "False")}`;
+    case "discord_get_variable":
+      return block.getFieldValue("VAR") || "x";
     case "discord_get_message":
       return "message";
     case "discord_get_author":
@@ -131,422 +125,337 @@ function blockToCode(block: Blockly.Block, ctx: CodeContext): string {
       return "message.guild";
     case "discord_get_message_content":
       return "message.content";
-
+    case "discord_get_all_servers":
+      return "bot.guilds";
+    case "discord_get_server_by_name": {
+      const name = inputExpr(block, "NAME", ctx, '""');
+      return `discord.utils.get(bot.guilds, name=${name})`;
+    }
     default:
-      return "";
+      return null;
   }
 }
 
-// Event generators
-function generateOnReady(block: Blockly.Block, ctx: CodeContext): string {
-  ctx.events.push("@bot.event\nasync def on_ready():\n    print(f'{bot.user} has connected to Discord!')");
-  return "";
-}
-
-function generateOnMessage(block: Blockly.Block, ctx: CodeContext): string {
-  const statements = getStatements(block, "DO", ctx);
-  const code = `@bot.event\nasync def on_message(message):\n    if message.author == bot.user:\n        return\n${statements}`;
-  ctx.events.push(code);
-  return "";
-}
-
-function generateOnMessageEdit(block: Blockly.Block, ctx: CodeContext): string {
-  const statements = getStatements(block, "DO", ctx);
-  const code = `@bot.event\nasync def on_message_edit(before, after):\n${statements}`;
-  ctx.events.push(code);
-  return "";
-}
-
-function generateOnMessageDelete(block: Blockly.Block, ctx: CodeContext): string {
-  const statements = getStatements(block, "DO", ctx);
-  const code = `@bot.event\nasync def on_message_delete(message):\n${statements}`;
-  ctx.events.push(code);
-  return "";
-}
-
-function generateOnMemberJoin(block: Blockly.Block, ctx: CodeContext): string {
-  const statements = getStatements(block, "DO", ctx);
-  const code = `@bot.event\nasync def on_member_join(member):\n${statements}`;
-  ctx.events.push(code);
-  return "";
-}
-
-function generateOnMemberRemove(block: Blockly.Block, ctx: CodeContext): string {
-  const statements = getStatements(block, "DO", ctx);
-  const code = `@bot.event\nasync def on_member_remove(member):\n${statements}`;
-  ctx.events.push(code);
-  return "";
-}
-
-function generateOnReactionAdd(block: Blockly.Block, ctx: CodeContext): string {
-  const statements = getStatements(block, "DO", ctx);
-  const code = `@bot.event\nasync def on_reaction_add(reaction, user):\n${statements}`;
-  ctx.events.push(code);
-  return "";
-}
-
-// Action generators
-function generateSendMessage(block: Blockly.Block, ctx: CodeContext): string {
-  const channel = getInputValue(block, "CHANNEL", ctx);
-  const message = getInputValue(block, "MESSAGE", ctx);
-  addLine(ctx, `await ${channel}.send(${message})`);
-  return "";
-}
-
-function generateSendEmbed(block: Blockly.Block, ctx: CodeContext): string {
-  const channel = getInputValue(block, "CHANNEL", ctx);
-  const title = getInputValue(block, "TITLE", ctx);
-  const description = getInputValue(block, "DESCRIPTION", ctx);
-  const color = getInputValue(block, "COLOR", ctx);
-  addLine(ctx, `embed = discord.Embed(title=${title}, description=${description}, color=${color})`);
-  addLine(ctx, `await ${channel}.send(embed=embed)`);
-  return "";
-}
-
-function generateEditMessage(block: Blockly.Block, ctx: CodeContext): string {
-  const message = getInputValue(block, "MESSAGE", ctx);
-  const content = getInputValue(block, "NEW_CONTENT", ctx);
-  addLine(ctx, `await ${message}.edit(content=${content})`);
-  return "";
-}
-
-function generateDeleteMessage(block: Blockly.Block, ctx: CodeContext): string {
-  const message = getInputValue(block, "MESSAGE", ctx);
-  addLine(ctx, `await ${message}.delete()`);
-  return "";
-}
-
-function generateAddReaction(block: Blockly.Block, ctx: CodeContext): string {
-  const message = getInputValue(block, "MESSAGE", ctx);
-  const emoji = getInputValue(block, "EMOJI", ctx);
-  addLine(ctx, `await ${message}.add_reaction(${emoji})`);
-  return "";
-}
-
-function generateAddRole(block: Blockly.Block, ctx: CodeContext): string {
-  const member = getInputValue(block, "MEMBER", ctx);
-  const role = getInputValue(block, "ROLE", ctx);
-  addLine(ctx, `await ${member}.add_roles(${role})`);
-  return "";
-}
-
-function generateRemoveRole(block: Blockly.Block, ctx: CodeContext): string {
-  const member = getInputValue(block, "MEMBER", ctx);
-  const role = getInputValue(block, "ROLE", ctx);
-  addLine(ctx, `await ${member}.remove_roles(${role})`);
-  return "";
-}
-
-function generateBanMember(block: Blockly.Block, ctx: CodeContext): string {
-  const member = getInputValue(block, "MEMBER", ctx);
-  const reason = getInputValue(block, "REASON", ctx);
-  addLine(ctx, `await ${member}.ban(reason=${reason})`);
-  return "";
-}
-
-function generateKickMember(block: Blockly.Block, ctx: CodeContext): string {
-  const member = getInputValue(block, "MEMBER", ctx);
-  const reason = getInputValue(block, "REASON", ctx);
-  addLine(ctx, `await ${member}.kick(reason=${reason})`);
-  return "";
-}
-
-// Control flow generators
-function generateIf(block: Blockly.Block, ctx: CodeContext): string {
-  const condition = getInputValue(block, "CONDITION", ctx);
-  addLine(ctx, `if ${condition}:`);
-  increaseIndent(ctx);
-  getStatements(block, "DO", ctx);
-  decreaseIndent(ctx);
-  return "";
-}
-
-function generateIfElse(block: Blockly.Block, ctx: CodeContext): string {
-  const condition = getInputValue(block, "CONDITION", ctx);
-  addLine(ctx, `if ${condition}:`);
-  increaseIndent(ctx);
-  getStatements(block, "DO", ctx);
-  decreaseIndent(ctx);
-  addLine(ctx, `else:`);
-  increaseIndent(ctx);
-  getStatements(block, "ELSE", ctx);
-  decreaseIndent(ctx);
-  return "";
-}
-
-function generateForLoop(block: Blockly.Block, ctx: CodeContext): string {
-  const count = Number(block.getFieldValue("COUNT") ?? "0");
-  const safeCount = Number.isFinite(count) && count > 0 ? Math.floor(count) : 1;
-  addLine(ctx, `for i in range(${safeCount}):`);
-  increaseIndent(ctx);
-  getStatements(block, "DO", ctx);
-  decreaseIndent(ctx);
-  return "";
-}
-
-function generateWhileLoop(block: Blockly.Block, ctx: CodeContext): string {
-  const condition = getInputValue(block, "CONDITION", ctx);
-  addLine(ctx, `while ${condition}:`);
-  increaseIndent(ctx);
-  getStatements(block, "DO", ctx);
-  decreaseIndent(ctx);
-  return "";
-}
-
-// Variable generators
-function generateSetVariable(block: Blockly.Block, ctx: CodeContext): string {
-  const varName = block.getFieldValue("VAR") || "x";
-  const value = getInputValue(block, "VALUE", ctx);
-  ctx.variables.add(varName);
-  addLine(ctx, `${varName} = ${value}`);
-  return "";
-}
-
-function generateGetVariable(block: Blockly.Block, ctx: CodeContext): string {
-  const varName = block.getFieldValue("VAR") || "x";
-  return varName;
-}
-
-// Utility generators
-function generatePrint(block: Blockly.Block, ctx: CodeContext): string {
-  const text = getInputValue(block, "TEXT", ctx);
-  addLine(ctx, `print(${text})`);
-  return "";
-}
-
-function generateText(block: Blockly.Block): string {
-  const text = block.getFieldValue("TEXT");
-  return `"${text.replace(/"/g, '\\"')}"`;
-}
-
-function generateNumber(block: Blockly.Block): string {
-  return block.getFieldValue("NUM");
-}
-
-function generateStringConcat(block: Blockly.Block, ctx: CodeContext): string {
-  const a = getInputValue(block, "A", ctx);
-  const b = getInputValue(block, "B", ctx);
-  return `${a} + ${b}`;
-}
-
-// Comparison and logic generators
-function generateComparison(block: Blockly.Block, ctx: CodeContext): string {
-  const a = getInputValue(block, "A", ctx);
-  const opToken = block.getFieldValue("OP");
-  const b = getInputValue(block, "B", ctx);
-  const opMap: Record<string, string> = {
-    EQ: "==",
-    NEQ: "!=",
-    GT: ">",
-    LT: "<",
-    GTE: ">=",
-    LTE: "<=",
-  };
-  const op = opMap[opToken] ?? "==";
-  return `${a} ${op} ${b}`;
-}
-
-function generateLogicAnd(block: Blockly.Block, ctx: CodeContext): string {
-  const a = getInputValue(block, "A", ctx);
-  const b = getInputValue(block, "B", ctx);
-  return `${a} and ${b}`;
-}
-
-function generateLogicOr(block: Blockly.Block, ctx: CodeContext): string {
-  const a = getInputValue(block, "A", ctx);
-  const b = getInputValue(block, "B", ctx);
-  return `${a} or ${b}`;
-}
-
-function generateLogicNot(block: Blockly.Block, ctx: CodeContext): string {
-  const a = getInputValue(block, "A", ctx);
-  return `not ${a}`;
-}
-
-// Helper functions
-function getInputValue(block: Blockly.Block, inputName: string, ctx: CodeContext): string {
-  const input = block.getInput(inputName);
-  if (!input || !input.connection || !input.connection.targetBlock()) {
-    return '""';
+/** Emit the statements connected to a statement input, or `pass` when empty. */
+function emitBody(
+  block: Blockly.Block,
+  inputName: string,
+  ctx: CodeContext,
+  writer: CodeWriter,
+  level: number
+): void {
+  const target = block.getInputTargetBlock(inputName);
+  if (!target) {
+    writer.line(level, "pass");
+    return;
   }
-  const targetBlock = input.connection.targetBlock();
-  if (!targetBlock) {
-    return '""';
+  let current: Blockly.Block | null = target;
+  while (current) {
+    statementBlockToCode(current, ctx, writer, level);
+    current = current.getNextBlock();
   }
-  return blockToCode(targetBlock, ctx);
 }
 
-function getStatements(block: Blockly.Block, statementName: string, ctx: CodeContext): string {
-  const input = block.getInput(statementName);
-  if (!input || !input.connection || !input.connection.targetBlock()) {
-    addLine(ctx, "pass");
-    return "";
+function uniqueTaskName(ctx: CodeContext, base: string): string {
+  const count = ctx.taskDefs.length;
+  return count === 0 ? base : `${base}_${count}`;
+}
+
+function parseClockTime(
+  block: Blockly.Block | null
+): { hour: number; minute: number } | null {
+  if (!block || block.type !== "discord_text") return null;
+  const value = String(block.getFieldValue("TEXT") ?? "").trim();
+  const match = /^(\d{1,2}):(\d{2})$/.exec(value);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour > 23 || minute > 59) return null;
+  return { hour, minute };
+}
+
+/** Render a statement block at the given indentation level. */
+function statementBlockToCode(
+  block: Blockly.Block,
+  ctx: CodeContext,
+  writer: CodeWriter,
+  level: number
+): void {
+  switch (block.type) {
+    case "discord_send_message": {
+      const channel = inputExpr(block, "CHANNEL", ctx, "message.channel");
+      const message = inputExpr(block, "MESSAGE", ctx, '""');
+      writer.line(level, `await ${channel}.send(${message})`);
+      return;
+    }
+    case "discord_send_embed": {
+      const channel = inputExpr(block, "CHANNEL", ctx, "message.channel");
+      const title = inputExpr(block, "TITLE", ctx, '""');
+      const description = inputExpr(block, "DESCRIPTION", ctx, '""');
+      const color = inputExpr(block, "COLOR", ctx, "0");
+      writer.line(
+        level,
+        `embed = discord.Embed(title=${title}, description=${description}, color=${color})`
+      );
+      writer.line(level, `await ${channel}.send(embed=embed)`);
+      return;
+    }
+    case "discord_edit_message": {
+      const message = inputExpr(block, "MESSAGE", ctx, "message");
+      const content = inputExpr(block, "NEW_CONTENT", ctx, '""');
+      writer.line(level, `await ${message}.edit(content=${content})`);
+      return;
+    }
+    case "discord_delete_message": {
+      const message = inputExpr(block, "MESSAGE", ctx, "message");
+      writer.line(level, `await ${message}.delete()`);
+      return;
+    }
+    case "discord_add_reaction": {
+      const message = inputExpr(block, "MESSAGE", ctx, "message");
+      const emoji = inputExpr(block, "EMOJI", ctx, '""');
+      writer.line(level, `await ${message}.add_reaction(${emoji})`);
+      return;
+    }
+    case "discord_add_role": {
+      const member = inputExpr(block, "MEMBER", ctx, "member");
+      const role = inputExpr(block, "ROLE", ctx, "None");
+      writer.line(level, `await ${member}.add_roles(${role})`);
+      return;
+    }
+    case "discord_remove_role": {
+      const member = inputExpr(block, "MEMBER", ctx, "member");
+      const role = inputExpr(block, "ROLE", ctx, "None");
+      writer.line(level, `await ${member}.remove_roles(${role})`);
+      return;
+    }
+    case "discord_ban_member": {
+      const member = inputExpr(block, "MEMBER", ctx, "member");
+      const reason = inputExpr(block, "REASON", ctx, '""');
+      writer.line(level, `await ${member}.ban(reason=${reason})`);
+      return;
+    }
+    case "discord_kick_member": {
+      const member = inputExpr(block, "MEMBER", ctx, "member");
+      const reason = inputExpr(block, "REASON", ctx, '""');
+      writer.line(level, `await ${member}.kick(reason=${reason})`);
+      return;
+    }
+    case "discord_print": {
+      const text = inputExpr(block, "TEXT", ctx, '""');
+      writer.line(level, `print(${text})`);
+      return;
+    }
+    case "discord_set_variable": {
+      const varName = block.getFieldValue("VAR") || "x";
+      const value = inputExpr(block, "VALUE", ctx, "None");
+      ctx.variables.add(varName);
+      writer.line(level, `${varName} = ${value}`);
+      return;
+    }
+    case "discord_if": {
+      const condition = inputExpr(block, "CONDITION", ctx, "False");
+      writer.line(level, `if ${condition}:`);
+      emitBody(block, "DO", ctx, writer, level + 1);
+      return;
+    }
+    case "discord_if_else": {
+      const condition = inputExpr(block, "CONDITION", ctx, "False");
+      writer.line(level, `if ${condition}:`);
+      emitBody(block, "DO", ctx, writer, level + 1);
+      writer.line(level, "else:");
+      emitBody(block, "ELSE", ctx, writer, level + 1);
+      return;
+    }
+    case "discord_for_loop": {
+      const raw = Number(block.getFieldValue("COUNT") ?? "0");
+      const count = Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 1;
+      writer.line(level, `for i in range(${count}):`);
+      emitBody(block, "DO", ctx, writer, level + 1);
+      return;
+    }
+    case "discord_while_loop": {
+      const condition = inputExpr(block, "CONDITION", ctx, "False");
+      writer.line(level, `while ${condition}:`);
+      emitBody(block, "DO", ctx, writer, level + 1);
+      return;
+    }
+    case "discord_conditional_message": {
+      const condition = inputExpr(block, "CONDITION", ctx, "True");
+      const channel = inputExpr(block, "CHANNEL", ctx, "message.channel");
+      const message = inputExpr(block, "MESSAGE", ctx, '""');
+      writer.line(level, `if ${condition}:`);
+      writer.line(level + 1, `await ${channel}.send(${message})`);
+      return;
+    }
+    case "discord_broadcast_to_servers": {
+      const message = inputExpr(block, "MESSAGE", ctx, '""');
+      writer.line(level, "for guild in bot.guilds:");
+      writer.line(level + 1, "if guild.system_channel:");
+      writer.line(level + 2, `await guild.system_channel.send(${message})`);
+      return;
+    }
+    case "discord_schedule_task": {
+      const interval = inputExpr(block, "INTERVAL", ctx, "60");
+      const taskName = uniqueTaskName(ctx, "scheduled_task");
+      const body = new CodeWriter();
+      emitBody(block, "DO", ctx, body, 1);
+      ctx.taskDefs.push(
+        `@tasks.loop(seconds=${interval})\nasync def ${taskName}():\n${body.toString()}`
+      );
+      ctx.taskStarts.push(taskName);
+      ctx.usesTasks = true;
+      return;
+    }
+    case "discord_schedule_daily": {
+      const timeBlock = block.getInputTargetBlock("TIME");
+      const parsed = parseClockTime(timeBlock);
+      const taskName = uniqueTaskName(ctx, "daily_task");
+      const body = new CodeWriter();
+      emitBody(block, "DO", ctx, body, 1);
+      ctx.usesTasks = true;
+      ctx.usesDatetime = true;
+
+      if (parsed) {
+        const decorator = `@tasks.loop(time=time(hour=${parsed.hour}, minute=${parsed.minute}))`;
+        ctx.taskDefs.push(
+          `${decorator}\nasync def ${taskName}():\n${body.toString()}`
+        );
+      } else {
+        const time = timeBlock
+          ? (valueBlockToCode(timeBlock, ctx) ?? '"00:00"')
+          : '"00:00"';
+        const guarded = new CodeWriter();
+        guarded.line(1, "now = datetime.now().strftime('%H:%M')");
+        guarded.line(1, `if now == ${time}:`);
+        const inner = new CodeWriter();
+        emitBody(block, "DO", ctx, inner, 2);
+        ctx.taskDefs.push(
+          `@tasks.loop(hours=24)\nasync def ${taskName}():\n${guarded.toString()}\n${inner.toString()}`
+        );
+      }
+      ctx.taskStarts.push(taskName);
+      return;
+    }
+    case "discord_wait": {
+      const seconds = inputExpr(block, "SECONDS", ctx, "1");
+      writer.line(level, `await asyncio.sleep(${seconds})`);
+      ctx.usesAsyncio = true;
+      return;
+    }
+    default:
+      return;
+  }
+}
+
+function buildEventHandler(
+  block: Blockly.Block,
+  ctx: CodeContext
+): EventHandler {
+  const signature = EVENT_SIGNATURES[block.type];
+  const body = new CodeWriter();
+  let hasBody = false;
+
+  if (block.type === "discord_on_message") {
+    body.line(1, "if message.author == bot.user:");
+    body.line(2, "return");
   }
 
-  let currentBlock = input.connection.targetBlock();
-  while (currentBlock) {
-    blockToCode(currentBlock, ctx);
-    const nextBlock = currentBlock.getNextBlock();
-    currentBlock = nextBlock || null;
+  const target = block.getInputTargetBlock("DO");
+  if (target) {
+    hasBody = true;
+    let current: Blockly.Block | null = target;
+    while (current) {
+      statementBlockToCode(current, ctx, body, 1);
+      current = current.getNextBlock();
+    }
   }
-  return "";
+
+  if (!hasBody && block.type !== "discord_on_message") {
+    body.line(1, "pass");
+  }
+
+  return { name: signature.name, params: signature.params, body };
+}
+
+function renderEvent(event: EventHandler): string {
+  return `@bot.event\nasync def ${event.name}(${event.params}):\n${event.body.toString()}`;
+}
+
+/** Start scheduled tasks from `on_ready`, creating the handler if needed. */
+function applyScheduledTaskStarts(ctx: CodeContext): void {
+  if (ctx.taskStarts.length === 0) return;
+
+  let onReady = ctx.events.find(event => event.name === "on_ready");
+  if (!onReady) {
+    onReady = { name: "on_ready", params: "", body: new CodeWriter() };
+    ctx.events.unshift(onReady);
+  }
+
+  for (const taskName of ctx.taskStarts) {
+    onReady.body.line(1, `if not ${taskName}.is_running():`);
+    onReady.body.line(2, `${taskName}.start()`);
+  }
 }
 
 /**
- * Generate complete Python code from Blockly workspace
+ * Generate complete Python code from a Blockly workspace.
  */
-export function generatePythonCode(workspace: Blockly.WorkspaceSvg): string {
+export function generatePythonCode(workspace: Blockly.Workspace): string {
   const ctx: CodeContext = {
-    indent: 0,
-    code: [],
-    variables: new Set(),
+    module: new CodeWriter(),
     events: [],
+    taskDefs: [],
+    taskStarts: [],
+    variables: new Set<string>(),
+    usesAsyncio: false,
+    usesDatetime: false,
+    usesTasks: false,
   };
 
-  // Add imports
-  ctx.code.push("import discord");
-  ctx.code.push("from discord.ext import commands");
-  ctx.code.push("import asyncio");
-  ctx.code.push("from datetime import datetime");
-  ctx.code.push("");
-
-  // Add bot initialization
-  ctx.code.push("bot = commands.Bot(command_prefix='!', intents=discord.Intents.default())");
-  ctx.code.push("");
-
-  // Get all top-level blocks
-  const blocks = workspace.getTopBlocks(false);
-
-  // Generate code for all blocks
-  for (const block of blocks) {
-    blockToCode(block, ctx);
+  for (const block of workspace.getTopBlocks(true)) {
+    if (isEventBlock(block.type)) {
+      ctx.events.push(buildEventHandler(block, ctx));
+      continue;
+    }
+    let current: Blockly.Block | null = block;
+    while (current) {
+      statementBlockToCode(current, ctx, ctx.module, 0);
+      current = current.getNextBlock();
+    }
   }
 
-  // Add events
-  if (ctx.events.length > 0) {
-    ctx.code.push("");
-    ctx.code.push(...ctx.events);
+  applyScheduledTaskStarts(ctx);
+
+  const out: string[] = [];
+  out.push("import discord");
+  out.push("from discord.ext import commands");
+  if (ctx.usesAsyncio) out.push("import asyncio");
+  if (ctx.usesDatetime) out.push("from datetime import datetime, time");
+  if (ctx.usesTasks) out.push("from discord.ext import tasks");
+  out.push("");
+  out.push(
+    "bot = commands.Bot(command_prefix='!', intents=discord.Intents.default())"
+  );
+  out.push("");
+
+  if (!ctx.module.isEmpty) {
+    out.push(ctx.module.toString());
+    out.push("");
   }
 
-  // Add bot.run at the end
-  ctx.code.push("");
-  ctx.code.push("# Replace 'YOUR_DISCORD_BOT_TOKEN' with your actual bot token");
-  ctx.code.push("bot.run('YOUR_DISCORD_BOT_TOKEN')");
-
-  return ctx.code.join("\n");
-}
-
-// ==================== ADVANCED BLOCK GENERATORS ====================
-
-function generateConditionalMessage(block: Blockly.Block, ctx: CodeContext): string {
-  const conditionBlock = block.getInputTargetBlock("CONDITION");
-  const condition = conditionBlock ? blockToCode(conditionBlock, ctx) : "True";
-  const channelBlock = block.getInputTargetBlock("CHANNEL");
-  const channel = channelBlock ? blockToCode(channelBlock, ctx) : "message.channel";
-  const messageBlock = block.getInputTargetBlock("MESSAGE");
-  const message = messageBlock ? blockToCode(messageBlock, ctx) : "''";
-  
-  addLine(ctx, `if ${condition}:`);
-  increaseIndent(ctx);
-  addLine(ctx, `await ${channel}.send(${message})`);
-  decreaseIndent(ctx);
-  
-  return "";
-}
-
-function generateGetAllServers(block: Blockly.Block, ctx: CodeContext): string {
-  return "bot.guilds";
-}
-
-function generateGetServerByName(block: Blockly.Block, ctx: CodeContext): string {
-  const nameBlock = block.getInputTargetBlock("NAME");
-  const name = nameBlock ? blockToCode(nameBlock, ctx) : "''";
-  return `discord.utils.get(bot.guilds, name=${name})`;
-}
-
-function generateBroadcastToServers(block: Blockly.Block, ctx: CodeContext): string {
-  const messageBlock = block.getInputTargetBlock("MESSAGE");
-  const message = messageBlock ? blockToCode(messageBlock, ctx) : "''";
-  
-  addLine(ctx, `for guild in bot.guilds:`);
-  increaseIndent(ctx);
-  addLine(ctx, `if guild.system_channel:`);
-  increaseIndent(ctx);
-  addLine(ctx, `await guild.system_channel.send(${message})`);
-  decreaseIndent(ctx);
-  decreaseIndent(ctx);
-  
-  return "";
-}
-
-function generateScheduleTask(block: Blockly.Block, ctx: CodeContext): string {
-  const intervalBlock = block.getInputTargetBlock("INTERVAL");
-  const interval = intervalBlock ? blockToCode(intervalBlock, ctx) : "60";
-  const statements = block.getInputTargetBlock("DO");
-  
-  addLine(ctx, `@tasks.loop(seconds=${interval})`);
-  addLine(ctx, `async def scheduled_task():`);
-  increaseIndent(ctx);
-  
-  if (statements) {
-    blockToCode(statements, ctx);
-  } else {
-    addLine(ctx, `pass`);
+  for (const def of ctx.taskDefs) {
+    out.push(def);
+    out.push("");
   }
-  
-  decreaseIndent(ctx);
-  addLine(ctx, `scheduled_task.start()`);
-  
-  // Add import for tasks
-  if (!ctx.code.some(line => line.includes("from discord.ext import tasks"))) {
-    ctx.code.splice(1, 0, "from discord.ext import tasks");
-  }
-  
-  return "";
-}
 
-function generateScheduleDaily(block: Blockly.Block, ctx: CodeContext): string {
-  const timeBlock = block.getInputTargetBlock("TIME");
-  const time = timeBlock ? blockToCode(timeBlock, ctx) : "'00:00'";
-  const statements = block.getInputTargetBlock("DO");
-  
-  addLine(ctx, `@tasks.loop(hours=24)`);
-  addLine(ctx, `async def daily_task():`);
-  increaseIndent(ctx);
-  addLine(ctx, `now = datetime.now().strftime('%H:%M')`);
-  addLine(ctx, `if now == ${time}:`);
-  increaseIndent(ctx);
-  
-  if (statements) {
-    blockToCode(statements, ctx);
-  } else {
-    addLine(ctx, `pass`);
+  for (const event of ctx.events) {
+    out.push(renderEvent(event));
+    out.push("");
   }
-  
-  decreaseIndent(ctx);
-  decreaseIndent(ctx);
-  addLine(ctx, `daily_task.start()`);
-  
-  // Add imports
-  if (!ctx.code.some(line => line.includes("from discord.ext import tasks"))) {
-    ctx.code.splice(1, 0, "from discord.ext import tasks");
-  }
-  if (!ctx.code.some(line => line.includes("from datetime import datetime"))) {
-    ctx.code.splice(1, 0, "from datetime import datetime");
-  }
-  
-  return "";
-}
 
-function generateWait(block: Blockly.Block, ctx: CodeContext): string {
-  const secondsBlock = block.getInputTargetBlock("SECONDS");
-  const seconds = secondsBlock ? blockToCode(secondsBlock, ctx) : "1";
-  addLine(ctx, `await asyncio.sleep(${seconds})`);
-  
-  // Add import for asyncio
-  if (!ctx.code.some(line => line.includes("import asyncio"))) {
-    ctx.code.splice(1, 0, "import asyncio");
-  }
-  
-  return "";
+  out.push("# Replace 'YOUR_DISCORD_BOT_TOKEN' with your actual bot token");
+  out.push("bot.run('YOUR_DISCORD_BOT_TOKEN')");
+
+  return out.join("\n");
 }

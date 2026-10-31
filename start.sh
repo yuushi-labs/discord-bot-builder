@@ -82,10 +82,6 @@ echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━�
 echo -e "${BLUE}起動中...${NC}"
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
-
-# バックエンド＋フロントエンドを同時起動
-echo -e "${GREEN}✓ アプリケーションを起動しました${NC}"
-echo ""
 echo -e "${BLUE}アクセスURL: ${NC}${YELLOW}http://localhost:$PORT${NC}"
 echo -e "${BLUE}API Server: ${NC}${YELLOW}http://localhost:$PORT/api${NC}"
 echo ""
@@ -95,23 +91,10 @@ echo ""
 # トラップを設定してクリーンアップ
 trap 'echo -e "\n${RED}✗ アプリケーションを停止しました${NC}"; exit 0' INT TERM
 
-# バックエンド起動
-echo -e "${BLUE}バックエンドを起動中...${NC}"
-# バックエンド起動
+# `pnpm dev` は開発モードで Vite ミドルウェア込みの Express サーバーを起動するため、
+# フロントエンドとバックエンドは同一ポートで提供される。
 NODE_ENV=development pnpm dev &
-BACKEND_PID=$!
+DEV_PID=$!
 
-# バックエンド起動待機
-sleep 3
-
-# フロントエンド起動（client ディレクトリで Vite を直接実行）
-# start.sh の最後の部分を修正
-cd client
-npx vite --host &
-FRONTEND_PID=$!
-cd ..
-
-
-# 両方のプロセスを監視
-wait
+wait "$DEV_PID"
 

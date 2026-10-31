@@ -1,20 +1,27 @@
 export { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 
-// Generate login URL at runtime so redirect URI reflects the current origin.
-export const getLoginUrl = ( ) => {
-  const oauthPortalUrl = import.meta.env.VITE_OAUTH_PORTAL_URL;
-  const appId = import.meta.env.VITE_APP_ID;
-  
-  // フロントエンドのポートに関わらず、常にバックエンドのコールバック URL を使用
-  const redirectUri = `http://localhost:3000/api/discord/callback`;
-  const state = btoa(redirectUri );
+/**
+ * Build the Discord OAuth2 authorization URL.
+ *
+ * The redirect URI is derived from the current origin so the same build works
+ * on localhost and in production. The backend callback lives at
+ * `/api/discord/callback` (see `server/discord-oauth.ts`).
+ */
+export const getLoginUrl = (): string => {
+  const clientId = import.meta.env.VITE_DISCORD_CLIENT_ID;
+  if (!clientId) {
+    throw new Error(
+      "VITE_DISCORD_CLIENT_ID が設定されていません。.env を確認してください。"
+    );
+  }
 
-  const url = new URL(`${oauthPortalUrl}/app-auth`);
-  url.searchParams.set("appId", appId);
-  url.searchParams.set("redirectUri", redirectUri);
-  url.searchParams.set("state", state);
-  url.searchParams.set("type", "signIn");
+  const redirectUri = `${window.location.origin}/api/discord/callback`;
+
+  const url = new URL("https://discord.com/api/oauth2/authorize");
+  url.searchParams.set("client_id", clientId);
+  url.searchParams.set("redirect_uri", redirectUri);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("scope", "identify email");
 
   return url.toString();
 };
-
