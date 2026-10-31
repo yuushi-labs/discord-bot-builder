@@ -6,6 +6,7 @@ import * as Blockly from "blockly";
  */
 
 const INDENT = "    ";
+const DEFAULT_TIMEZONE = "timezone(timedelta(hours=9))";
 
 /** Line buffer that keeps track of indentation explicitly. */
 class CodeWriter {
@@ -30,15 +31,31 @@ interface EventHandler {
   body: CodeWriter;
 }
 
+/**
+ * Variables that exist inside the current event/task scope. Each entry is a
+ * Python expression that evaluates to the value, or null when the scope has no
+ * such value (e.g. `message` inside `on_ready`).
+ */
+interface Scope {
+  message: string | null;
+  author: string | null;
+  channel: string | null;
+  guild: string | null;
+}
+
 interface CodeContext {
   module: CodeWriter;
   events: EventHandler[];
   taskDefs: string[];
   taskStarts: string[];
   variables: Set<string>;
+  scope: Scope;
+  taskNameCounter: number;
   usesAsyncio: boolean;
   usesDatetime: boolean;
   usesTasks: boolean;
+  usesMessageContent: boolean;
+  usesMembers: boolean;
 }
 
 const EVENT_SIGNATURES: Record<string, { name: string; params: string }> = {
@@ -53,6 +70,50 @@ const EVENT_SIGNATURES: Record<string, { name: string; params: string }> = {
     params: "reaction, user",
   },
 };
+
+const NO_SCOPE: Scope = {
+  message: null,
+  author: null,
+  channel: null,
+  guild: null,
+};
+
+function scopeForEvent(type: string): Scope {
+  switch (type) {
+    case "discord_on_message":
+    case "discord_on_message_delete":
+      return {
+        message: "message",
+        author: "message.author",
+        channel: "message.channel",
+        guild: "message.guild",
+      };
+    case "discord_on_message_edit":
+      return {
+        message: "after",
+        author: "after.author",
+        channel: "after.channel",
+        guild: "after.guild",
+      };
+    case "discord_on_member_join":
+    case "discord_on_member_remove":
+      return {
+        message: null,
+        author: "member",
+        channel: null,
+        guild: "member.guild",
+      };
+    case "discord_on_reaction_add":
+      return {
+        message: "reaction.message",
+        author: "user",
+        channel: "reaction.message.channel",
+        guild: "reaction.message.guild",
+      };
+    default:
+      return { ...NO_SCOPE };
+  }
+}
 
 function isEventBlock(type: string): boolean {
   return type in EVENT_SIGNATURES;
@@ -116,15 +177,17 @@ function valueBlockToCode(
     case "discord_get_variable":
       return block.getFieldValue("VAR") || "x";
     case "discord_get_message":
-      return "message";
+      return ctx.scope.message ?? "None";
     case "discord_get_author":
-      return "message.author";
+      return ctx.scope.author ?? "None";
     case "discord_get_channel":
-      return "message.channel";
+      return ctx.scope.channel ?? "None";
     case "discord_get_guild":
-      return "message.guild";
-    case "discord_get_message_content":
-      return "message.content";
+      return ctx.scope.guild ?? "None";
+    case "discord_get_message_content": {
+      ctx.usesMessageContent = true;
+      return ctx.scope.message ? `${ctx.scope.message}.content` : "None";
+    }
     case "discord_get_all_servers":
       return "bot.guilds";
     case "discord_get_server_by_name": {
@@ -157,7 +220,7 @@ function emitBody(
 }
 
 function uniqueTaskName(ctx: CodeContext, base: string): string {
-  const count = ctx.taskDefs.length;
+  const count = ctx.taskNameCounter++;
   return count === 0 ? base : `${base}_${count}`;
 }
 
@@ -183,13 +246,23 @@ function statementBlockToCode(
 ): void {
   switch (block.type) {
     case "discord_send_message": {
-      const channel = inputExpr(block, "CHANNEL", ctx, "message.channel");
+      const channel = inputExpr(
+        block,
+        "CHANNEL",
+        ctx,
+        ctx.scope.channel ?? "None"
+      );
       const message = inputExpr(block, "MESSAGE", ctx, '""');
       writer.line(level, `await ${channel}.send(${message})`);
       return;
     }
     case "discord_send_embed": {
-      const channel = inputExpr(block, "CHANNEL", ctx, "message.channel");
+      const channel = inputExpr(
+        block,
+        "CHANNEL",
+        ctx,
+        ctx.scope.channel ?? "None"
+      );
       const title = inputExpr(block, "TITLE", ctx, '""');
       const description = inputExpr(block, "DESCRIPTION", ctx, '""');
       const color = inputExpr(block, "COLOR", ctx, "0");
@@ -201,42 +274,77 @@ function statementBlockToCode(
       return;
     }
     case "discord_edit_message": {
-      const message = inputExpr(block, "MESSAGE", ctx, "message");
+      const message = inputExpr(
+        block,
+        "MESSAGE",
+        ctx,
+        ctx.scope.message ?? "None"
+      );
       const content = inputExpr(block, "NEW_CONTENT", ctx, '""');
       writer.line(level, `await ${message}.edit(content=${content})`);
       return;
     }
     case "discord_delete_message": {
-      const message = inputExpr(block, "MESSAGE", ctx, "message");
+      const message = inputExpr(
+        block,
+        "MESSAGE",
+        ctx,
+        ctx.scope.message ?? "None"
+      );
       writer.line(level, `await ${message}.delete()`);
       return;
     }
     case "discord_add_reaction": {
-      const message = inputExpr(block, "MESSAGE", ctx, "message");
+      const message = inputExpr(
+        block,
+        "MESSAGE",
+        ctx,
+        ctx.scope.message ?? "None"
+      );
       const emoji = inputExpr(block, "EMOJI", ctx, '""');
       writer.line(level, `await ${message}.add_reaction(${emoji})`);
       return;
     }
     case "discord_add_role": {
-      const member = inputExpr(block, "MEMBER", ctx, "member");
+      const member = inputExpr(
+        block,
+        "MEMBER",
+        ctx,
+        ctx.scope.author ?? "None"
+      );
       const role = inputExpr(block, "ROLE", ctx, "None");
       writer.line(level, `await ${member}.add_roles(${role})`);
       return;
     }
     case "discord_remove_role": {
-      const member = inputExpr(block, "MEMBER", ctx, "member");
+      const member = inputExpr(
+        block,
+        "MEMBER",
+        ctx,
+        ctx.scope.author ?? "None"
+      );
       const role = inputExpr(block, "ROLE", ctx, "None");
       writer.line(level, `await ${member}.remove_roles(${role})`);
       return;
     }
     case "discord_ban_member": {
-      const member = inputExpr(block, "MEMBER", ctx, "member");
+      const member = inputExpr(
+        block,
+        "MEMBER",
+        ctx,
+        ctx.scope.author ?? "None"
+      );
       const reason = inputExpr(block, "REASON", ctx, '""');
       writer.line(level, `await ${member}.ban(reason=${reason})`);
       return;
     }
     case "discord_kick_member": {
-      const member = inputExpr(block, "MEMBER", ctx, "member");
+      const member = inputExpr(
+        block,
+        "MEMBER",
+        ctx,
+        ctx.scope.author ?? "None"
+      );
       const reason = inputExpr(block, "REASON", ctx, '""');
       writer.line(level, `await ${member}.kick(reason=${reason})`);
       return;
@@ -282,7 +390,12 @@ function statementBlockToCode(
     }
     case "discord_conditional_message": {
       const condition = inputExpr(block, "CONDITION", ctx, "True");
-      const channel = inputExpr(block, "CHANNEL", ctx, "message.channel");
+      const channel = inputExpr(
+        block,
+        "CHANNEL",
+        ctx,
+        ctx.scope.channel ?? "None"
+      );
       const message = inputExpr(block, "MESSAGE", ctx, '""');
       writer.line(level, `if ${condition}:`);
       writer.line(level + 1, `await ${channel}.send(${message})`);
@@ -298,8 +411,11 @@ function statementBlockToCode(
     case "discord_schedule_task": {
       const interval = inputExpr(block, "INTERVAL", ctx, "60");
       const taskName = uniqueTaskName(ctx, "scheduled_task");
+      const previousScope = ctx.scope;
+      ctx.scope = { ...NO_SCOPE };
       const body = new CodeWriter();
       emitBody(block, "DO", ctx, body, 1);
+      ctx.scope = previousScope;
       ctx.taskDefs.push(
         `@tasks.loop(seconds=${interval})\nasync def ${taskName}():\n${body.toString()}`
       );
@@ -311,13 +427,17 @@ function statementBlockToCode(
       const timeBlock = block.getInputTargetBlock("TIME");
       const parsed = parseClockTime(timeBlock);
       const taskName = uniqueTaskName(ctx, "daily_task");
-      const body = new CodeWriter();
-      emitBody(block, "DO", ctx, body, 1);
+      const previousScope = ctx.scope;
+      ctx.scope = { ...NO_SCOPE };
       ctx.usesTasks = true;
       ctx.usesDatetime = true;
 
       if (parsed) {
-        const decorator = `@tasks.loop(time=time(hour=${parsed.hour}, minute=${parsed.minute}))`;
+        const body = new CodeWriter();
+        emitBody(block, "DO", ctx, body, 1);
+        const decorator =
+          `@tasks.loop(time=time(hour=${parsed.hour}, minute=${parsed.minute}, ` +
+          `tzinfo=${DEFAULT_TIMEZONE}))`;
         ctx.taskDefs.push(
           `${decorator}\nasync def ${taskName}():\n${body.toString()}`
         );
@@ -331,9 +451,10 @@ function statementBlockToCode(
         const inner = new CodeWriter();
         emitBody(block, "DO", ctx, inner, 2);
         ctx.taskDefs.push(
-          `@tasks.loop(hours=24)\nasync def ${taskName}():\n${guarded.toString()}\n${inner.toString()}`
+          `@tasks.loop(minutes=1)\nasync def ${taskName}():\n${guarded.toString()}\n${inner.toString()}`
         );
       }
+      ctx.scope = previousScope;
       ctx.taskStarts.push(taskName);
       return;
     }
@@ -357,9 +478,23 @@ function buildEventHandler(
   let hasBody = false;
 
   if (block.type === "discord_on_message") {
+    ctx.usesMessageContent = true;
     body.line(1, "if message.author == bot.user:");
     body.line(2, "return");
+  } else if (
+    block.type === "discord_on_message_edit" ||
+    block.type === "discord_on_message_delete"
+  ) {
+    ctx.usesMessageContent = true;
+  } else if (
+    block.type === "discord_on_member_join" ||
+    block.type === "discord_on_member_remove"
+  ) {
+    ctx.usesMembers = true;
   }
+
+  const previousScope = ctx.scope;
+  ctx.scope = scopeForEvent(block.type);
 
   const target = block.getInputTargetBlock("DO");
   if (target) {
@@ -370,6 +505,8 @@ function buildEventHandler(
       current = current.getNextBlock();
     }
   }
+
+  ctx.scope = previousScope;
 
   if (!hasBody && block.type !== "discord_on_message") {
     body.line(1, "pass");
@@ -398,19 +535,31 @@ function applyScheduledTaskStarts(ctx: CodeContext): void {
   }
 }
 
+export interface GeneratePythonCodeOptions {
+  /** Expression passed to `bot.run(...)`, e.g. a token variable name. */
+  tokenExpr?: string;
+}
+
 /**
  * Generate complete Python code from a Blockly workspace.
  */
-export function generatePythonCode(workspace: Blockly.Workspace): string {
+export function generatePythonCode(
+  workspace: Blockly.Workspace,
+  options: GeneratePythonCodeOptions = {}
+): string {
   const ctx: CodeContext = {
     module: new CodeWriter(),
     events: [],
     taskDefs: [],
     taskStarts: [],
     variables: new Set<string>(),
+    scope: { ...NO_SCOPE },
+    taskNameCounter: 0,
     usesAsyncio: false,
     usesDatetime: false,
     usesTasks: false,
+    usesMessageContent: false,
+    usesMembers: false,
   };
 
   for (const block of workspace.getTopBlocks(true)) {
@@ -431,12 +580,28 @@ export function generatePythonCode(workspace: Blockly.Workspace): string {
   out.push("import discord");
   out.push("from discord.ext import commands");
   if (ctx.usesAsyncio) out.push("import asyncio");
-  if (ctx.usesDatetime) out.push("from datetime import datetime, time");
+  if (ctx.usesDatetime) {
+    out.push("from datetime import datetime, time, timezone, timedelta");
+  }
   if (ctx.usesTasks) out.push("from discord.ext import tasks");
   out.push("");
-  out.push(
-    "bot = commands.Bot(command_prefix='!', intents=discord.Intents.default())"
-  );
+
+  if (ctx.usesMessageContent || ctx.usesMembers) {
+    out.push("intents = discord.Intents.default()");
+    out.push(
+      "# Enable the privileged intents below in the Discord Developer Portal:"
+    );
+    out.push(
+      "# https://discord.com/developers/applications -> Bot -> Privileged Intents"
+    );
+    if (ctx.usesMessageContent) out.push("intents.message_content = True");
+    if (ctx.usesMembers) out.push("intents.members = True");
+    out.push("bot = commands.Bot(command_prefix='!', intents=intents)");
+  } else {
+    out.push(
+      "bot = commands.Bot(command_prefix='!', intents=discord.Intents.default())"
+    );
+  }
   out.push("");
 
   if (!ctx.module.isEmpty) {
@@ -454,8 +619,12 @@ export function generatePythonCode(workspace: Blockly.Workspace): string {
     out.push("");
   }
 
-  out.push("# Replace 'YOUR_DISCORD_BOT_TOKEN' with your actual bot token");
-  out.push("bot.run('YOUR_DISCORD_BOT_TOKEN')");
+  if (options.tokenExpr) {
+    out.push(`bot.run(${options.tokenExpr})`);
+  } else {
+    out.push("# Replace 'YOUR_DISCORD_BOT_TOKEN' with your actual bot token");
+    out.push("bot.run('YOUR_DISCORD_BOT_TOKEN')");
+  }
 
   return out.join("\n");
 }

@@ -1,9 +1,20 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { getLoginUrl } from "./const";
+import { DISCORD_OAUTH_STATE_COOKIE } from "@shared/const";
+
+function readCookie(name: string): string | undefined {
+  const prefix = `${name}=`;
+  const entry = document.cookie
+    .split(";")
+    .map(part => part.trim())
+    .find(part => part.startsWith(prefix));
+  return entry ? entry.slice(prefix.length) : undefined;
+}
 
 describe("getLoginUrl", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
+    document.cookie = `${DISCORD_OAUTH_STATE_COOKIE}=; max-age=0; path=/`;
   });
 
   it("throws when VITE_DISCORD_CLIENT_ID is not configured", () => {
@@ -24,5 +35,16 @@ describe("getLoginUrl", () => {
     );
     expect(url.searchParams.get("response_type")).toBe("code");
     expect(url.searchParams.get("scope")).toBe("identify email");
+  });
+
+  it("issues an unpredictable state bound to the browser", () => {
+    vi.stubEnv("VITE_DISCORD_CLIENT_ID", "123456789012345678");
+
+    const first = new URL(getLoginUrl()).searchParams.get("state");
+    const second = new URL(getLoginUrl()).searchParams.get("state");
+
+    expect(first).toBeTruthy();
+    expect(first).not.toBe(second);
+    expect(readCookie(DISCORD_OAUTH_STATE_COOKIE)).toBe(second);
   });
 });

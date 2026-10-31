@@ -65,7 +65,15 @@ export function useAuth(options?: UseAuthOptions) {
     if (state.user) return;
     if (typeof window === "undefined") return;
 
-    const target = redirectPath ?? getLoginUrl();
+    let target = redirectPath;
+    if (!target) {
+      try {
+        target = getLoginUrl();
+      } catch (error) {
+        console.error("[Auth] Unable to build login URL", error);
+        target = "/login";
+      }
+    }
     if (window.location.pathname === target) return;
 
     window.location.href = target;

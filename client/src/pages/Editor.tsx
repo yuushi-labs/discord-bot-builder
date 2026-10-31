@@ -178,7 +178,9 @@ export default function Editor({ params }: { params: { id: string } }) {
 
     setIsExporting(true);
     try {
-      const code = generatePythonCode(workspace.current);
+      const code = generatePythonCode(workspace.current, {
+        tokenExpr: "DISCORD_TOKEN",
+      });
 
       const exportCode = `DISCORD_TOKEN = ${JSON.stringify(project.discordToken || "")}\n\n${code}`;
 

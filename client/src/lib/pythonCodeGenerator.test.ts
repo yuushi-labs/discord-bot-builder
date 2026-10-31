@@ -39,6 +39,12 @@ describe("Python Code Generator", () => {
     expect(code).toContain("bot.run('YOUR_DISCORD_BOT_TOKEN')");
   });
 
+  it("uses a provided token expression in bot.run", () => {
+    const code = generatePythonCode(workspace, { tokenExpr: "DISCORD_TOKEN" });
+    expect(code).toContain("bot.run(DISCORD_TOKEN)");
+    expect(code).not.toContain("YOUR_DISCORD_BOT_TOKEN");
+  });
+
   it("indents statements nested inside an event handler", () => {
     const event = workspace.newBlock("discord_on_message");
     const send = workspace.newBlock("discord_send_message");
@@ -129,6 +135,25 @@ describe("Python Code Generator", () => {
     expect(code).toContain("async def on_ready():");
     expect(code).toContain("if not scheduled_task.is_running():");
     expect(code).toContain("scheduled_task.start()");
+    // A task has no message scope, so it must not reference `message`.
+    expect(code).not.toContain("await message.channel.send");
+  });
+
+  it("gives nested schedule blocks distinct names", () => {
+    const outer = workspace.newBlock("discord_schedule_task");
+    const outerInterval = workspace.newBlock("discord_number");
+    setNumber(outerInterval, 60);
+    connect(outer, outerInterval, "INTERVAL");
+
+    const inner = workspace.newBlock("discord_schedule_task");
+    const innerInterval = workspace.newBlock("discord_number");
+    setNumber(innerInterval, 30);
+    connect(inner, innerInterval, "INTERVAL");
+    outer.getInput("DO")!.connection!.connect(inner.previousConnection!);
+
+    const code = generatePythonCode(workspace);
+    expect(code).toContain("async def scheduled_task():");
+    expect(code).toContain("async def scheduled_task_1():");
   });
 
   it("uses an explicit time loop for daily schedules with HH:MM", () => {
@@ -138,8 +163,27 @@ describe("Python Code Generator", () => {
     connect(schedule, time, "TIME");
 
     const code = generatePythonCode(workspace);
-    expect(code).toContain("from datetime import datetime, time");
-    expect(code).toContain("@tasks.loop(time=time(hour=9, minute=30))");
+    expect(code).toContain(
+      "from datetime import datetime, time, timezone, timedelta"
+    );
+    expect(code).toContain(
+      "@tasks.loop(time=time(hour=9, minute=30, tzinfo=timezone(timedelta(hours=9))))"
+    );
+  });
+
+  it("checks every minute for a non-literal daily schedule time", () => {
+    const schedule = workspace.newBlock("discord_schedule_daily");
+    const send = workspace.newBlock("discord_send_message");
+    const text = workspace.newBlock("discord_text");
+    const channel = workspace.newBlock("discord_get_channel");
+    setText(text, "tick");
+    connect(send, text, "MESSAGE");
+    connect(send, channel, "CHANNEL");
+    schedule.getInput("DO")!.connection!.connect(send.previousConnection!);
+
+    const code = generatePythonCode(workspace);
+    expect(code).toContain("@tasks.loop(minutes=1)");
+    expect(code).toContain("now = datetime.now().strftime('%H:%M')");
   });
 
   it("adds the asyncio import when a wait block is used", () => {
@@ -183,6 +227,37 @@ describe("Python Code Generator", () => {
     expect(code).toContain(
       '            await guild.system_channel.send("hello everyone")'
     );
+  });
+
+  it("resolves message-based getters from the current event scope", () => {
+    const event = workspace.newBlock("discord_on_message_edit");
+    const send = workspace.newBlock("discord_send_message");
+    const text = workspace.newBlock("discord_text");
+    const channel = workspace.newBlock("discord_get_channel");
+    setText(text, "edited");
+    connect(send, text, "MESSAGE");
+    connect(send, channel, "CHANNEL");
+    event.getInput("DO")!.connection!.connect(send.previousConnection!);
+
+    const code = generatePythonCode(workspace);
+    expect(code).toContain("async def on_message_edit(before, after):");
+    expect(code).toContain('await after.channel.send("edited")');
+    expect(code).not.toContain("message.channel");
+  });
+
+  it("enables message_content and members intents when needed", () => {
+    const messageEvent = workspace.newBlock("discord_on_message");
+    const joinEvent = workspace.newBlock("discord_on_member_join");
+    expect(messageEvent.type).toBe("discord_on_message");
+    expect(joinEvent.type).toBe("discord_on_member_join");
+
+    const code = generatePythonCode(workspace);
+    expect(code).toContain("intents.message_content = True");
+    expect(code).toContain("intents.members = True");
+    expect(code).toContain(
+      "bot = commands.Bot(command_prefix='!', intents=intents)"
+    );
+    expect(code).toContain("Discord Developer Portal");
   });
 
   it("defines every block type the generator can emit", () => {

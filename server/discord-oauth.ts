@@ -3,7 +3,8 @@ import axios from "axios";
 import { upsertUser } from "./db";
 import type { Request, Response } from "express";
 import { getSessionCookieOptions } from "./_core/cookies";
-import { COOKIE_NAME } from "@shared/const";
+import { COOKIE_NAME, DISCORD_OAUTH_STATE_COOKIE } from "@shared/const";
+import { parse as parseCookieHeader } from "cookie";
 import * as jose from "jose";
 
 const DISCORD_API_BASE = "https://discord.com/api/v10";
@@ -26,7 +27,10 @@ interface DiscordTokenResponse {
 /**
  * Exchange Discord authorization code for access token
  */
-export async function exchangeDiscordCode(code: string, redirectUri: string): Promise<DiscordTokenResponse> {
+export async function exchangeDiscordCode(
+  code: string,
+  redirectUri: string
+): Promise<DiscordTokenResponse> {
   const response = await axios.post<DiscordTokenResponse>(
     `${DISCORD_API_BASE}/oauth2/token`,
     {
@@ -50,7 +54,9 @@ export async function exchangeDiscordCode(code: string, redirectUri: string): Pr
 /**
  * Get Discord user info from access token
  */
-export async function getDiscordUser(accessToken: string): Promise<DiscordUser> {
+export async function getDiscordUser(
+  accessToken: string
+): Promise<DiscordUser> {
   const response = await axios.get<DiscordUser>(
     `${DISCORD_API_BASE}/users/@me`,
     {
@@ -68,11 +74,31 @@ export async function getDiscordUser(accessToken: string): Promise<DiscordUser> 
  */
 export async function handleDiscordCallback(req: Request, res: Response) {
   try {
-    const { code } = req.query;
+    const { code, state } = req.query;
 
     if (!code || typeof code !== "string") {
       return res.status(400).json({ error: "Missing authorization code" });
     }
+
+    const cookies = parseCookieHeader(req.headers.cookie ?? "");
+    const expectedState = cookies[DISCORD_OAUTH_STATE_COOKIE];
+
+    // Verify the state issued to this browser before accepting the code.
+    if (
+      !state ||
+      typeof state !== "string" ||
+      !expectedState ||
+      state !== expectedState
+    ) {
+      return res.status(403).json({ error: "Invalid OAuth state" });
+    }
+
+    // The state is single-use; clear it now that it has been validated.
+    const baseCookieOptions = getSessionCookieOptions(req);
+    res.clearCookie(DISCORD_OAUTH_STATE_COOKIE, {
+      ...baseCookieOptions,
+      maxAge: undefined,
+    });
 
     const redirectUri = `${req.protocol}://${req.get("host")}/api/discord/callback`;
 
@@ -99,8 +125,7 @@ export async function handleDiscordCallback(req: Request, res: Response) {
       .setExpirationTime("7d")
       .sign(secret);
 
-    const cookieOptions = getSessionCookieOptions(req);
-    res.cookie(COOKIE_NAME, token, cookieOptions);
+    res.cookie(COOKIE_NAME, token, baseCookieOptions);
 
     return res.redirect("/dashboard");
   } catch (error) {
