@@ -316,6 +316,41 @@ describe("Python Code Generator", () => {
     }
   });
 
+  it("parenthesizes composite operands to preserve grouping", () => {
+    const event = workspace.newBlock("discord_on_ready");
+    const print = workspace.newBlock("discord_print");
+    const andBlock = workspace.newBlock("discord_logic_and");
+    const orBlock = workspace.newBlock("discord_logic_or");
+    const t1 = workspace.newBlock("discord_text");
+    const t2 = workspace.newBlock("discord_text");
+    const t3 = workspace.newBlock("discord_text");
+    setText(t1, "a");
+    setText(t2, "b");
+    setText(t3, "c");
+    // (a or b) and c
+    orBlock.getInput("A")!.connection!.connect(t1.outputConnection!);
+    orBlock.getInput("B")!.connection!.connect(t2.outputConnection!);
+    andBlock.getInput("A")!.connection!.connect(orBlock.outputConnection!);
+    andBlock.getInput("B")!.connection!.connect(t3.outputConnection!);
+    print.getInput("TEXT")!.connection!.connect(andBlock.outputConnection!);
+    event.getInput("DO")!.connection!.connect(print.previousConnection!);
+
+    const code = generatePythonCode(workspace);
+    expect(code).toContain('print(("a" or "b") and "c")');
+  });
+
+  it("ignores loose action blocks left at the module level", () => {
+    // A disconnected statement block must not emit invalid module-level code.
+    const send = workspace.newBlock("discord_send_message");
+    const text = workspace.newBlock("discord_text");
+    setText(text, "orphan");
+    connect(send, text, "MESSAGE");
+
+    const code = generatePythonCode(workspace);
+    expect(code).not.toContain("await");
+    expect(code).not.toContain("orphan");
+  });
+
   it("produces balanced brackets and parentheses", () => {
     const event = workspace.newBlock("discord_on_message");
     const send = workspace.newBlock("discord_send_message");

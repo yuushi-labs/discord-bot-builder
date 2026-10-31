@@ -20,6 +20,10 @@ class CodeWriter {
     return this.lines.length === 0;
   }
 
+  get lineCount(): number {
+    return this.lines.length;
+  }
+
   toString(): string {
     return this.lines.join("\n");
   }
@@ -119,6 +123,17 @@ function isEventBlock(type: string): boolean {
   return type in EVENT_SIGNATURES;
 }
 
+/**
+ * Statement blocks that are valid at module level. Everything else needs an
+ * event or task scope, so loose copies are ignored instead of emitting code
+ * that references undefined variables.
+ */
+const MODULE_LEVEL_TYPES = new Set([
+  "discord_schedule_task",
+  "discord_schedule_daily",
+  "discord_set_variable",
+]);
+
 function escapePythonString(value: string): string {
   return value
     .replace(/\\/g, "\\\\")
@@ -137,6 +152,29 @@ function inputExpr(
   return valueBlockToCode(target, ctx) ?? fallback;
 }
 
+/** Value blocks that render to a compound expression and may need grouping. */
+const COMPOSITE_VALUE_TYPES = new Set([
+  "discord_comparison",
+  "discord_logic_and",
+  "discord_logic_or",
+  "discord_logic_not",
+  "discord_string_concat",
+]);
+
+/** Render an operand, wrapping composite expressions to preserve grouping. */
+function operandExpr(
+  block: Blockly.Block,
+  inputName: string,
+  ctx: CodeContext,
+  fallback: string
+): string {
+  const target = block.getInputTargetBlock(inputName);
+  if (!target) return fallback;
+  const rendered = valueBlockToCode(target, ctx);
+  if (rendered === null) return fallback;
+  return COMPOSITE_VALUE_TYPES.has(target.type) ? `(${rendered})` : rendered;
+}
+
 /** Render a value (output) block to a Python expression, or null if unknown. */
 function valueBlockToCode(
   block: Blockly.Block,
@@ -150,13 +188,13 @@ function valueBlockToCode(
     case "discord_number":
       return String(block.getFieldValue("NUM") ?? "0");
     case "discord_string_concat": {
-      const a = inputExpr(block, "A", ctx, '""');
-      const b = inputExpr(block, "B", ctx, '""');
+      const a = operandExpr(block, "A", ctx, '""');
+      const b = operandExpr(block, "B", ctx, '""');
       return `${a} + ${b}`;
     }
     case "discord_comparison": {
-      const a = inputExpr(block, "A", ctx, "None");
-      const b = inputExpr(block, "B", ctx, "None");
+      const a = operandExpr(block, "A", ctx, "None");
+      const b = operandExpr(block, "B", ctx, "None");
       const opMap: Record<string, string> = {
         EQ: "==",
         NEQ: "!=",
@@ -169,11 +207,11 @@ function valueBlockToCode(
       return `${a} ${op} ${b}`;
     }
     case "discord_logic_and":
-      return `${inputExpr(block, "A", ctx, "False")} and ${inputExpr(block, "B", ctx, "False")}`;
+      return `${operandExpr(block, "A", ctx, "False")} and ${operandExpr(block, "B", ctx, "False")}`;
     case "discord_logic_or":
-      return `${inputExpr(block, "A", ctx, "False")} or ${inputExpr(block, "B", ctx, "False")}`;
+      return `${operandExpr(block, "A", ctx, "False")} or ${operandExpr(block, "B", ctx, "False")}`;
     case "discord_logic_not":
-      return `not ${inputExpr(block, "A", ctx, "False")}`;
+      return `not ${operandExpr(block, "A", ctx, "False")}`;
     case "discord_get_variable":
       return block.getFieldValue("VAR") || "x";
     case "discord_get_message":
@@ -208,14 +246,16 @@ function emitBody(
   level: number
 ): void {
   const target = block.getInputTargetBlock(inputName);
-  if (!target) {
-    writer.line(level, "pass");
-    return;
-  }
+  const before = writer.lineCount;
   let current: Blockly.Block | null = target;
   while (current) {
     statementBlockToCode(current, ctx, writer, level);
     current = current.getNextBlock();
+  }
+  // A connected block may still emit nothing (e.g. an unknown type), so base
+  // the `pass` decision on the lines actually produced.
+  if (writer.lineCount === before) {
+    writer.line(level, "pass");
   }
 }
 
@@ -478,7 +518,6 @@ function buildEventHandler(
 ): EventHandler {
   const signature = EVENT_SIGNATURES[block.type];
   const body = new CodeWriter();
-  let hasBody = false;
 
   if (block.type === "discord_on_message") {
     ctx.usesMessageContent = true;
@@ -500,18 +539,16 @@ function buildEventHandler(
   ctx.scope = scopeForEvent(block.type);
 
   const target = block.getInputTargetBlock("DO");
-  if (target) {
-    hasBody = true;
-    let current: Blockly.Block | null = target;
-    while (current) {
-      statementBlockToCode(current, ctx, body, 1);
-      current = current.getNextBlock();
-    }
+  let current: Blockly.Block | null = target;
+  while (current) {
+    statementBlockToCode(current, ctx, body, 1);
+    current = current.getNextBlock();
   }
 
   ctx.scope = previousScope;
 
-  if (!hasBody && block.type !== "discord_on_message") {
+  // on_message always emits the author guard, so it never needs `pass`.
+  if (body.isEmpty) {
     body.line(1, "pass");
   }
 
@@ -572,7 +609,9 @@ export function generatePythonCode(
     }
     let current: Blockly.Block | null = block;
     while (current) {
-      statementBlockToCode(current, ctx, ctx.module, 0);
+      if (MODULE_LEVEL_TYPES.has(current.type)) {
+        statementBlockToCode(current, ctx, ctx.module, 0);
+      }
       current = current.getNextBlock();
     }
   }

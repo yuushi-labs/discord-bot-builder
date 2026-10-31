@@ -85,10 +85,10 @@ export async function handleDiscordCallback(req: Request, res: Response) {
     const separator = storedValue.indexOf(":");
     const expectedState =
       separator === -1 ? storedValue : storedValue.slice(0, separator);
+    // The cookie parser already percent-decodes the value, so the suffix is
+    // the plain redirect URI.
     const storedRedirectUri =
-      separator === -1
-        ? null
-        : decodeURIComponent(storedValue.slice(separator + 1));
+      separator === -1 ? null : storedValue.slice(separator + 1);
 
     // Verify the state issued to this browser before accepting the code.
     if (
