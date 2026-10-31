@@ -81,7 +81,14 @@ export async function handleDiscordCallback(req: Request, res: Response) {
     }
 
     const cookies = parseCookieHeader(req.headers.cookie ?? "");
-    const expectedState = cookies[DISCORD_OAUTH_STATE_COOKIE];
+    const storedValue = cookies[DISCORD_OAUTH_STATE_COOKIE] ?? "";
+    const separator = storedValue.indexOf(":");
+    const expectedState =
+      separator === -1 ? storedValue : storedValue.slice(0, separator);
+    const storedRedirectUri =
+      separator === -1
+        ? null
+        : decodeURIComponent(storedValue.slice(separator + 1));
 
     // Verify the state issued to this browser before accepting the code.
     if (
@@ -100,7 +107,11 @@ export async function handleDiscordCallback(req: Request, res: Response) {
       maxAge: undefined,
     });
 
-    const redirectUri = `${req.protocol}://${req.get("host")}/api/discord/callback`;
+    // Reuse the exact redirect URI the browser used so it matches the value
+    // sent during authorization (Discord rejects a mismatched redirect_uri).
+    const redirectUri =
+      storedRedirectUri ??
+      `${req.protocol}://${req.get("host")}/api/discord/callback`;
 
     const tokenData = await exchangeDiscordCode(code, redirectUri);
     const discordUser = await getDiscordUser(tokenData.access_token);

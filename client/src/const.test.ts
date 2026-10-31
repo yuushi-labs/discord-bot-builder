@@ -45,6 +45,13 @@ describe("getLoginUrl", () => {
 
     expect(first).toBeTruthy();
     expect(first).not.toBe(second);
-    expect(readCookie(DISCORD_OAUTH_STATE_COOKIE)).toBe(second);
+
+    // The cookie stores "<state>:<encoded redirect uri>" for the callback.
+    const stored = readCookie(DISCORD_OAUTH_STATE_COOKIE) ?? "";
+    const separator = stored.indexOf(":");
+    expect(stored.slice(0, separator)).toBe(second);
+    expect(decodeURIComponent(stored.slice(separator + 1))).toBe(
+      `${window.location.origin}/api/discord/callback`
+    );
   });
 });

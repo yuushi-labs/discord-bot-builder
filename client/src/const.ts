@@ -34,10 +34,13 @@ export const getLoginUrl = (): string => {
   const redirectUri = `${window.location.origin}/api/discord/callback`;
   const state = createOAuthState();
 
+  // Store the state and the exact redirect URI together so the callback can
+  // reuse the same redirect_uri during the token exchange (Discord rejects a
+  // mismatch, e.g. http vs https behind a proxy).
   const secure = window.location.protocol === "https:" ? "; Secure" : "";
   document.cookie =
-    `${DISCORD_OAUTH_STATE_COOKIE}=${state}; path=/; max-age=600; ` +
-    `samesite=lax${secure}`;
+    `${DISCORD_OAUTH_STATE_COOKIE}=${state}:${encodeURIComponent(redirectUri)}; ` +
+    `path=/; max-age=600; samesite=lax${secure}`;
 
   const url = new URL("https://discord.com/api/oauth2/authorize");
   url.searchParams.set("client_id", clientId);

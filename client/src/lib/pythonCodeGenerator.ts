@@ -446,7 +446,10 @@ function statementBlockToCode(
           ? (valueBlockToCode(timeBlock, ctx) ?? '"00:00"')
           : '"00:00"';
         const guarded = new CodeWriter();
-        guarded.line(1, "now = datetime.now().strftime('%H:%M')");
+        guarded.line(
+          1,
+          `now = datetime.now(${DEFAULT_TIMEZONE}).strftime('%H:%M')`
+        );
         guarded.line(1, `if now == ${time}:`);
         const inner = new CodeWriter();
         emitBody(block, "DO", ctx, inner, 2);

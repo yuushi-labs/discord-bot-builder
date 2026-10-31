@@ -183,7 +183,9 @@ describe("Python Code Generator", () => {
 
     const code = generatePythonCode(workspace);
     expect(code).toContain("@tasks.loop(minutes=1)");
-    expect(code).toContain("now = datetime.now().strftime('%H:%M')");
+    expect(code).toContain(
+      "now = datetime.now(timezone(timedelta(hours=9))).strftime('%H:%M')"
+    );
   });
 
   it("adds the asyncio import when a wait block is used", () => {
