@@ -3,7 +3,7 @@ import type { Express, Request, Response } from "express";
 import * as db from "../db";
 import { getSessionCookieOptions } from "./cookies";
 import { sdk } from "./sdk";
-import { handleDiscordCallback } from "../discord-oauth";
+import { handleDiscordCallback, startDiscordLogin } from "../discord-oauth";
 
 function getQueryParam(req: Request, key: string): string | undefined {
   const value = req.query[key];
@@ -11,7 +11,8 @@ function getQueryParam(req: Request, key: string): string | undefined {
 }
 
 export function registerOAuthRoutes(app: Express) {
-  // Discord OAuth callback
+  // Discord OAuth flow
+  app.get("/api/discord/login", startDiscordLogin);
   app.get("/api/discord/callback", handleDiscordCallback);
 
   // Manus OAuth callback

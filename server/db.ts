@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, botProjects, discordUserCache, BotProject, DiscordUserCache, InsertBotProject, InsertDiscordUserCache } from "../drizzle/schema";
 import { ENV } from './_core/env';
+import { encryptToken, decryptToken } from './token-crypto';
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -25,8 +26,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 
   const db = await getDb();
   if (!db) {
-    console.warn("[Database] Cannot upsert user: database not available");
-    return;
+    throw new Error("Database not available");
   }
 
   try {
@@ -90,21 +90,23 @@ export async function getUserByOpenId(openId: string) {
 }
 
 // Bot Projects
-export async function getBotProjectsByUserId(userId: number): Promise<BotProject[]> {
+export async function getBotProjectsByUserId(userId: number) {
   const db = await getDb();
-  if (!db) return [];
-  return db.select().from(botProjects).where(eq(botProjects.userId, userId));
+  if (!db) throw new Error("Database not available");
+  return db.select({ id: botProjects.id, userId: botProjects.userId, name: botProjects.name,
+    blocklyWorkspace: botProjects.blocklyWorkspace, createdAt: botProjects.createdAt, updatedAt: botProjects.updatedAt,
+  }).from(botProjects).where(eq(botProjects.userId, userId));
 }
 
 export async function getBotProjectById(projectId: number, userId: number): Promise<BotProject | undefined> {
   const db = await getDb();
-  if (!db) return undefined;
+  if (!db) throw new Error("Database not available");
   const result = await db
     .select()
     .from(botProjects)
     .where(and(eq(botProjects.id, projectId), eq(botProjects.userId, userId)))
     .limit(1);
-  return result.length > 0 ? result[0] : undefined;
+  return result.length > 0 ? { ...result[0], discordToken: decryptToken(result[0].discordToken, userId, "bot") } : undefined;
 }
 
 export async function createBotProject(
@@ -117,7 +119,7 @@ export async function createBotProject(
   const result = await db.insert(botProjects).values({
     userId,
     name,
-    discordToken,
+    discordToken: encryptToken(discordToken, userId, "bot"),
   });
   return result;
 }
@@ -125,7 +127,7 @@ export async function createBotProject(
 export async function updateBotProject(
   projectId: number,
   userId: number,
-  data: Partial<Omit<InsertBotProject, "userId">>
+  data: Partial<Pick<InsertBotProject, "name" | "blocklyWorkspace">>
 ) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -152,7 +154,8 @@ export async function getDiscordUserCache(userId: number): Promise<DiscordUserCa
     .from(discordUserCache)
     .where(eq(discordUserCache.userId, userId))
     .limit(1);
-  return result.length > 0 ? result[0] : undefined;
+  if (!result.length) return undefined;
+  return { ...result[0], accessToken: result[0].accessToken === null ? null : decryptToken(result[0].accessToken, userId, "oauth") };
 }
 
 export async function upsertDiscordUserCache(
@@ -161,10 +164,11 @@ export async function upsertDiscordUserCache(
 ) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  const encryptedData = { ...discordData, accessToken: discordData.accessToken == null ? discordData.accessToken : encryptToken(discordData.accessToken, userId, "oauth") };
   return db
     .insert(discordUserCache)
-    .values({ userId, ...discordData })
+    .values({ userId, ...encryptedData })
     .onDuplicateKeyUpdate({
-      set: discordData,
+      set: encryptedData,
     });
 }

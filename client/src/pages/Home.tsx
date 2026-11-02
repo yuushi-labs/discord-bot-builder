@@ -1,12 +1,11 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
-import { getLoginUrl } from "@/const";
 import { useLocation } from "wouter";
 
 export default function Home() {
   const { user, loading, isAuthenticated, logout } = useAuth();
-  const [location, navigate] = useLocation();
+  const [, navigate] = useLocation();
 
   if (loading) {
     return (
@@ -22,14 +21,12 @@ export default function Home() {
         {/* Navigation */}
         <nav className="bg-card border-b border-border px-4 py-4">
           <div className="container mx-auto flex items-center justify-between">
-            <h1 className="text-2xl font-bold text-foreground">Discord Bot Builder</h1>
+            <h1 className="text-2xl font-bold text-foreground">
+              Discord Bot Builder
+            </h1>
             <div className="flex items-center gap-4">
               <span className="text-sm text-muted-foreground">{user.name}</span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => logout?.()}
-              >
+              <Button variant="outline" size="sm" onClick={() => logout?.()}>
                 ログアウト
               </Button>
             </div>
@@ -64,7 +61,9 @@ export default function Home() {
       {/* Navigation */}
       <nav className="bg-card border-b border-border px-4 py-4">
         <div className="container mx-auto">
-          <h1 className="text-2xl font-bold text-foreground">Discord Bot Builder</h1>
+          <h1 className="text-2xl font-bold text-foreground">
+            Discord Bot Builder
+          </h1>
         </div>
       </nav>
 
@@ -75,7 +74,8 @@ export default function Home() {
             Discord ボットをノーコードで構築
           </h2>
           <p className="text-xl text-muted-foreground mb-8">
-            Blockly のビジュアルプログラミングを使って、複雑なコードを書かずに Discord ボットを作成できます
+            Blockly のビジュアルプログラミングを使って、複雑なコードを書かずに
+            Discord ボットを作成できます
           </p>
           <Button
             size="lg"

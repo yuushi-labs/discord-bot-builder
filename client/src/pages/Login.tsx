@@ -1,5 +1,11 @@
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useLocation } from "wouter";
 import { useEffect } from "react";
@@ -15,21 +21,7 @@ export default function Login() {
   }, [user, loading, navigate]);
 
   const handleDiscordLogin = () => {
-    const clientId = import.meta.env.VITE_DISCORD_CLIENT_ID || "";
-    if (!clientId) {
-      alert("Discord Client ID が設定されていません");
-      return;
-    }
-    const redirectUri = `${window.location.origin}/api/discord/callback`;
-    const scopes = ["identify", "email"];
-
-    const discordAuthUrl = new URL("https://discord.com/api/oauth2/authorize");
-    discordAuthUrl.searchParams.set("client_id", clientId);
-    discordAuthUrl.searchParams.set("redirect_uri", redirectUri);
-    discordAuthUrl.searchParams.set("response_type", "code");
-    discordAuthUrl.searchParams.set("scope", scopes.join(" "));
-
-    window.location.href = discordAuthUrl.toString();
+    window.location.href = "/api/discord/login";
   };
 
   if (loading) {
@@ -81,9 +73,7 @@ export default function Login() {
               <div className="w-full border-t border-border"></div>
             </div>
             <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-card text-muted-foreground">
-                または
-              </span>
+              <span className="px-2 bg-card text-muted-foreground">または</span>
             </div>
           </div>
 
