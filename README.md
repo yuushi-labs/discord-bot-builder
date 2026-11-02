@@ -25,10 +25,17 @@ Discord Bot をノーコードで構築・管理できる Web アプリケーシ
 
 ### 前提条件
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:e878e13c62bf57f9e3167d9c8d05882189d92acbf1f17d28eaeafac43f860cef -->
+
 - Node.js 18.0 以上
 - npm または pnpm
 - MySQL 8.0 以上
 - Discord Developer Account
+- Python 3（テスト時に必要。実行ファイルは `PYTHON` 環境変数で指定可能）
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 ### インストール
 

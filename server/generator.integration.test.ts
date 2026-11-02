@@ -22,7 +22,7 @@ function connectValue(
 }
 function assertPythonSyntax(code: string) {
   const result = spawnSync(
-    "python3",
+    process.env.PYTHON || (process.platform === "win32" ? "python" : "python3"),
     ["-c", "import ast, sys; ast.parse(sys.stdin.read())"],
     { input: code, encoding: "utf8" }
   );
