@@ -459,7 +459,12 @@ function statementBlockToCode(
       ctx.taskDefs.push(
         `@tasks.loop(seconds=${interval})\nasync def ${taskName}():\n${body.toString()}`
       );
-      ctx.taskStarts.push(taskName);
+      if (writer === ctx.module) {
+        ctx.taskStarts.push(taskName);
+      } else {
+        writer.line(level, `if not ${taskName}.is_running():`);
+        writer.line(level + 1, `${taskName}.start()`);
+      }
       ctx.usesTasks = true;
       return;
     }
@@ -498,7 +503,12 @@ function statementBlockToCode(
         );
       }
       ctx.scope = previousScope;
-      ctx.taskStarts.push(taskName);
+      if (writer === ctx.module) {
+        ctx.taskStarts.push(taskName);
+      } else {
+        writer.line(level, `if not ${taskName}.is_running():`);
+        writer.line(level + 1, `${taskName}.start()`);
+      }
       return;
     }
     case "discord_wait": {

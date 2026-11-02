@@ -366,4 +366,18 @@ describe("Python Code Generator", () => {
     expect(count(/\(/g)).toBe(count(/\)/g));
     expect(count(/\[/g)).toBe(count(/\]/g));
   });
+  it.each(["discord_schedule_task", "discord_schedule_daily"])(
+    "activates nested %s only inside the enclosing condition",
+    type => {
+      const event = workspace.newBlock("discord_on_message");
+      const condition = workspace.newBlock("discord_if");
+      const schedule = workspace.newBlock(type);
+      event.getInput("DO")!.connection!.connect(condition.previousConnection!);
+      condition.getInput("DO")!.connection!.connect(schedule.previousConnection!);
+      const code = generatePythonCode(workspace);
+      expect(code).toMatch(/    if False:\n        if not (scheduled_task|daily_task)\.is_running\(\):\n            \1\.start\(\)/);
+      expect(code).not.toContain("async def on_ready");
+    }
+  );
+
 });
