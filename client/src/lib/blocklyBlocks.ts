@@ -1,16 +1,15 @@
 import * as Blockly from "blockly";
-import { javascriptGenerator, Order } from "blockly/javascript";
 
 /**
  * Discord Bot Builder - Blockly Custom Blocks Definition
- * Defines all custom blocks for Discord bot development
+ * Defines all custom blocks for Discord bot development.
+ *
+ * Code generation for these blocks lives in `pythonCodeGenerator.ts`.
  */
 
 export function defineDiscordBlocks() {
-  const JS = javascriptGenerator;
-
   // ==================== EVENT BLOCKS ====================
-  
+
   Blockly.Blocks["discord_on_ready"] = {
     init: function () {
       this.appendDummyInput().appendField("ボット起動時");
@@ -103,7 +102,9 @@ export function defineDiscordBlocks() {
   Blockly.Blocks["discord_edit_message"] = {
     init: function () {
       this.appendValueInput("MESSAGE").setCheck(null).appendField("メッセージ");
-      this.appendValueInput("NEW_CONTENT").setCheck(null).appendField("新しい内容");
+      this.appendValueInput("NEW_CONTENT")
+        .setCheck(null)
+        .appendField("新しい内容");
       this.setPreviousStatement(true, null);
       this.setNextStatement(true, null);
       this.setColour(160);
@@ -193,7 +194,9 @@ export function defineDiscordBlocks() {
     init: function () {
       this.appendValueInput("CONDITION").setCheck(null).appendField("もし");
       this.appendStatementInput("DO").setCheck(null).appendField("なら");
-      this.appendStatementInput("ELSE").setCheck(null).appendField("そうでなければ");
+      this.appendStatementInput("ELSE")
+        .setCheck(null)
+        .appendField("そうでなければ");
       this.setPreviousStatement(true, null);
       this.setNextStatement(true, null);
       this.setColour(210);
@@ -217,7 +220,9 @@ export function defineDiscordBlocks() {
 
   Blockly.Blocks["discord_while_loop"] = {
     init: function () {
-      this.appendValueInput("CONDITION").setCheck(null).appendField("〜の間繰り返す");
+      this.appendValueInput("CONDITION")
+        .setCheck(null)
+        .appendField("〜の間繰り返す");
       this.appendStatementInput("DO").setCheck(null);
       this.setPreviousStatement(true, null);
       this.setNextStatement(true, null);
@@ -229,14 +234,17 @@ export function defineDiscordBlocks() {
   Blockly.Blocks["discord_comparison"] = {
     init: function () {
       this.appendValueInput("A").setCheck(null).appendField("左辺");
-      this.appendDummyInput().appendField(new Blockly.FieldDropdown([
-        ["==", "EQ"],
-        ["!=", "NEQ"],
-        [">", "GT"],
-        ["<", "LT"],
-        [">=", "GTE"],
-        ["<=", "LTE"],
-      ]), "OP");
+      this.appendDummyInput().appendField(
+        new Blockly.FieldDropdown([
+          ["==", "EQ"],
+          ["!=", "NEQ"],
+          [">", "GT"],
+          ["<", "LT"],
+          [">=", "GTE"],
+          ["<=", "LTE"],
+        ]),
+        "OP"
+      );
       this.appendValueInput("B").setCheck(null).appendField("右辺");
       this.setOutput(true, null);
       this.setColour(210);
@@ -280,8 +288,7 @@ export function defineDiscordBlocks() {
       this.appendDummyInput()
         .appendField("変数")
         .appendField(new Blockly.FieldTextInput("x"), "VAR")
-        .appendField("を")
-      ;
+        .appendField("を");
       this.appendValueInput("VALUE").setCheck(null);
       this.appendDummyInput().appendField("に設定");
       this.setPreviousStatement(true, null);
@@ -328,8 +335,7 @@ export function defineDiscordBlocks() {
 
   Blockly.Blocks["discord_number"] = {
     init: function () {
-      this.appendDummyInput()
-        .appendField(new Blockly.FieldNumber(0), "NUM");
+      this.appendDummyInput().appendField(new Blockly.FieldNumber(0), "NUM");
       this.setOutput(true, null);
       this.setColour(160);
       this.setTooltip("数値");
@@ -345,7 +351,6 @@ export function defineDiscordBlocks() {
       this.setTooltip("2つのテキストを連結");
     },
   };
-
 
   Blockly.Blocks["discord_get_message"] = {
     init: function () {
@@ -387,135 +392,84 @@ export function defineDiscordBlocks() {
     },
   };
 
-  // ==================== CODE GENERATORS ====================
+  // ==================== ADVANCED BLOCKS ====================
 
-  JS.forBlock["discord_on_ready"] = function (block, generator) {
-    const statements = generator.statementToCode(block, "DO");
-    return `@bot.event\nasync def on_ready():\n${statements}\n`;
+  Blockly.Blocks["discord_conditional_message"] = {
+    init: function () {
+      this.appendValueInput("CONDITION").setCheck(null).appendField("もし");
+      this.appendValueInput("CHANNEL").setCheck(null).appendField("チャンネル");
+      this.appendValueInput("MESSAGE").setCheck(null).appendField("メッセージ");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(160);
+      this.setTooltip("条件が真ならメッセージを送信");
+    },
   };
 
-  JS.forBlock["discord_on_message"] = function (block, generator) {
-    const statements = generator.statementToCode(block, "DO");
-    return `@bot.event\nasync def on_message(message):\n    if message.author == bot.user:\n        return\n${statements}\n`;
+  Blockly.Blocks["discord_get_all_servers"] = {
+    init: function () {
+      this.appendDummyInput().appendField("全サーバー");
+      this.setOutput(true, null);
+      this.setColour(65);
+      this.setTooltip("ボットが参加している全サーバーを取得");
+    },
   };
 
-  JS.forBlock["discord_send_message"] = function (block, generator) {
-    const channel = generator.valueToCode(block, "CHANNEL", Order.ATOMIC);
-    const message = generator.valueToCode(block, "MESSAGE", Order.ATOMIC);
-    return `await ${channel}.send(${message})\n`;
+  Blockly.Blocks["discord_get_server_by_name"] = {
+    init: function () {
+      this.appendValueInput("NAME").setCheck(null).appendField("サーバー名");
+      this.setOutput(true, null);
+      this.setColour(65);
+      this.setTooltip("名前でサーバーを取得");
+    },
   };
 
-  JS.forBlock["discord_print"] = function (block, generator) {
-    const text = generator.valueToCode(block, "TEXT", Order.ATOMIC);
-    return `print(${text})\n`;
+  Blockly.Blocks["discord_broadcast_to_servers"] = {
+    init: function () {
+      this.appendValueInput("MESSAGE")
+        .setCheck(null)
+        .appendField("全サーバーに");
+      this.appendDummyInput().appendField("メッセージを送信");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(160);
+      this.setTooltip("ボットが参加している全サーバーにメッセージを送信");
+    },
   };
 
-  JS.forBlock["discord_text"] = function (block) {
-    const text = block.getFieldValue("TEXT");
-    return [`"${text}"`, Order.ATOMIC];
+  Blockly.Blocks["discord_schedule_task"] = {
+    init: function () {
+      this.appendValueInput("INTERVAL")
+        .setCheck(null)
+        .appendField("間隔（秒）");
+      this.appendStatementInput("DO").setCheck(null).appendField("実行内容");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(210);
+      this.setTooltip("指定した間隔で定期実行");
+    },
   };
 
-  JS.forBlock["discord_number"] = function (block) {
-    const num = block.getFieldValue("NUM");
-    return [num.toString(), Order.ATOMIC];
+  Blockly.Blocks["discord_schedule_daily"] = {
+    init: function () {
+      this.appendValueInput("TIME")
+        .setCheck(null)
+        .appendField("実行時刻（HH:MM）");
+      this.appendStatementInput("DO").setCheck(null).appendField("実行内容");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(210);
+      this.setTooltip("毎日指定した時刻に実行");
+    },
   };
 
-  JS.forBlock["discord_string_concat"] = function (block, generator) {
-    const a = generator.valueToCode(block, "A", Order.ATOMIC) || "''";
-    const b = generator.valueToCode(block, "B", Order.ATOMIC) || "''";
-    return [`${a} + ${b}`, Order.ADDITION];
-  };
-
-  JS.forBlock["discord_comparison"] = function (block, generator) {
-    const a = generator.valueToCode(block, "A", Order.RELATIONAL) || "0";
-    const b = generator.valueToCode(block, "B", Order.RELATIONAL) || "0";
-    const op = block.getFieldValue("OP");
-    const operators: Record<string, string> = {
-      EQ: "==",
-      NEQ: "!=",
-      GT: ">",
-      LT: "<",
-      GTE: ">=",
-      LTE: "<=",
-    };
-    return [`${a} ${operators[op]} ${b}`, Order.RELATIONAL];
-  };
-
-  JS.forBlock["discord_logic_and"] = function (block, generator) {
-    const a = generator.valueToCode(block, "A", Order.LOGICAL_AND) || "False";
-    const b = generator.valueToCode(block, "B", Order.LOGICAL_AND) || "False";
-    return [`${a} and ${b}`, Order.LOGICAL_AND];
-  };
-
-  JS.forBlock["discord_logic_or"] = function (block, generator) {
-    const a = generator.valueToCode(block, "A", Order.LOGICAL_OR) || "False";
-    const b = generator.valueToCode(block, "B", Order.LOGICAL_OR) || "False";
-    return [`${a} or ${b}`, Order.LOGICAL_OR];
-  };
-
-  JS.forBlock["discord_logic_not"] = function (block, generator) {
-    const a = generator.valueToCode(block, "A", Order.LOGICAL_NOT) || "False";
-    return [`not ${a}`, Order.LOGICAL_NOT];
-  };
-
-  JS.forBlock["discord_set_variable"] = function (block, generator) {
-    const variable = block.getFieldValue("VAR");
-    const value = generator.valueToCode(block, "VALUE", Order.ASSIGNMENT) || "None";
-    return `${variable} = ${value}\n`;
-  };
-
-  JS.forBlock["discord_get_variable"] = function (block) {
-    const variable = block.getFieldValue("VAR");
-    return [variable, Order.ATOMIC];
-  };
-
-  JS.forBlock["discord_if"] = function (block, generator) {
-    const condition = generator.valueToCode(block, "CONDITION", Order.NONE) || "False";
-    const statements = generator.statementToCode(block, "DO");
-    return `if ${condition}:\n${statements || "    pass\n"}`;
-  };
-
-  JS.forBlock["discord_if_else"] = function (block, generator) {
-    const condition = generator.valueToCode(block, "CONDITION", Order.NONE) || "False";
-    const doStatements = generator.statementToCode(block, "DO");
-    const elseStatements = generator.statementToCode(block, "ELSE");
-    return `if ${condition}:\n${doStatements || "    pass\n"}else:\n${elseStatements || "    pass\n"}`;
-  };
-
-  JS.forBlock["discord_for_loop"] = function (block, generator) {
-    const count = block.getFieldValue("COUNT") || 10;
-    const statements = generator.statementToCode(block, "DO");
-    return `for i in range(${count}):\n${statements || "    pass\n"}`;
-  };
-
-  JS.forBlock["discord_while_loop"] = function (block, generator) {
-    const condition = generator.valueToCode(block, "CONDITION", Order.NONE) || "False";
-    const statements = generator.statementToCode(block, "DO");
-    return `while ${condition}:\n${statements || "    pass\n"}`;
-  };
-
-  JS.forBlock["discord_on_message_edit"] = function (block, generator) {
-    const statements = generator.statementToCode(block, "DO");
-    return `@bot.event\nasync def on_message_edit(before, after):\n${statements}\n`;
-  };
-
-  JS.forBlock["discord_on_message_delete"] = function (block, generator) {
-    const statements = generator.statementToCode(block, "DO");
-    return `@bot.event\nasync def on_message_delete(message):\n${statements}\n`;
-  };
-
-  JS.forBlock["discord_on_member_join"] = function (block, generator) {
-    const statements = generator.statementToCode(block, "DO");
-    return `@bot.event\nasync def on_member_join(member):\n${statements}\n`;
-  };
-
-  JS.forBlock["discord_on_member_remove"] = function (block, generator) {
-    const statements = generator.statementToCode(block, "DO");
-    return `@bot.event\nasync def on_member_remove(member):\n${statements}\n`;
-  };
-
-  JS.forBlock["discord_on_reaction_add"] = function (block, generator) {
-    const statements = generator.statementToCode(block, "DO");
-    return `@bot.event\nasync def on_reaction_add(reaction, user):\n${statements}\n`;
+  Blockly.Blocks["discord_wait"] = {
+    init: function () {
+      this.appendValueInput("SECONDS").setCheck(null).appendField("待機（秒）");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(45);
+      this.setTooltip("指定した秒数待機");
+    },
   };
 }

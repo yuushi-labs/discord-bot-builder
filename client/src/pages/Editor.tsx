@@ -8,7 +8,7 @@ import { useLocation } from "wouter";
 import { ArrowLeft, Download } from "lucide-react";
 import * as Blockly from "blockly";
 import { defineDiscordBlocks } from "@/lib/blocklyBlocks";
-import { generatePythonCode as generatePythonCodeNew } from "@/lib/pythonCodeGenerator";
+import { generatePythonCode } from "@/lib/pythonCodeGenerator";
 
 export default function Editor({ params }: { params: { id: string } }) {
   const id = params.id;
@@ -89,6 +89,15 @@ export default function Editor({ params }: { params: { id: string } }) {
         </category>
         <category name="ユーティリティ" colour="45">
           <block type="discord_print"></block>
+          <block type="discord_wait"></block>
+        </category>
+        <category name="応用" colour="290">
+          <block type="discord_conditional_message"></block>
+          <block type="discord_get_all_servers"></block>
+          <block type="discord_get_server_by_name"></block>
+          <block type="discord_broadcast_to_servers"></block>
+          <block type="discord_schedule_task"></block>
+          <block type="discord_schedule_daily"></block>
         </category>
       </xml>
     `;
@@ -225,9 +234,9 @@ export default function Editor({ params }: { params: { id: string } }) {
 
     setIsExporting(true);
     try {
-      const exportCode = generatePythonCodeNew(
+      const exportCode = generatePythonCode(
         workspace.current,
-        project.discordToken
+        { tokenExpr: JSON.stringify(project.discordToken) }
       );
 
       const element = document.createElement("a");

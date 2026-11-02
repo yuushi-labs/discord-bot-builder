@@ -45,10 +45,10 @@ describe("Blockly Python export", () => {
     connectStatement(message, "DO", condition);
     connectStatement(condition, "DO", send);
     connectValue(send, "CHANNEL", channel);
-    const code = generatePythonCode(ws, "test-token");
+    const code = generatePythonCode(ws, { tokenExpr: '"test-token"' });
     expect(code).toContain('async def on_ready():\n    print("a\\\\b\\"c")');
     expect(code).toContain(
-      'async def on_message(message):\n    if message.author == bot.user:\n        return\n    if "":\n        await message.channel.send("")'
+      'async def on_message(message):\n    if message.author == bot.user:\n        return\n    if False:\n        await message.channel.send("")'
     );
     expect(code).toContain('bot.run("test-token")');
     expect(code).not.toContain("intents.members = True");
@@ -65,19 +65,19 @@ describe("Blockly Python export", () => {
     connectValue(print, "TEXT", ws.newBlock("discord_get_message_content"));
     const code = generatePythonCode(ws);
     expect(code).toContain("async def on_member_join(member):\n    pass");
-    expect(code).toContain("message = after\n    print(message.content)");
+    expect(code).toContain("print(after.content)");
     assertPythonSyntax(code);
     ws.dispose();
   });
 
-  it("rejects duplicate handlers and detached blocks", () => {
+  it("rejects duplicate handlers and ignores detached blocks", () => {
     const ws = new Blockly.Workspace();
     ws.newBlock("discord_on_ready");
     ws.newBlock("discord_on_ready");
     expect(() => generatePythonCode(ws)).toThrow(/同じイベント/);
     ws.clear();
     ws.newBlock("discord_send_message");
-    expect(() => generatePythonCode(ws)).toThrow(/イベントに接続/);
+    expect(generatePythonCode(ws)).not.toContain("await");
     ws.dispose();
   });
 });

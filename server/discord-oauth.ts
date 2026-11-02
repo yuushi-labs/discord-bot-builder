@@ -107,6 +107,10 @@ export function startDiscordLogin(req: Request, res: Response) {
 export async function handleDiscordCallback(req: Request, res: Response) {
   try {
     const { code, state } = req.query;
+    if (!code || typeof code !== "string") {
+      return res.status(400).json({ error: "Missing authorization code" });
+    }
+
     const cookie = stateCookie(req);
     const expected = parseCookies(req.headers.cookie || "")[cookie.name];
     res.clearCookie(cookie.name, cookie.options);
@@ -117,12 +121,9 @@ export async function handleDiscordCallback(req: Request, res: Response) {
       !/^[A-Za-z0-9_-]{43}$/.test(expected) ||
       !timingSafeEqual(Buffer.from(state), Buffer.from(expected))
     ) {
-      return res.status(400).json({ error: "Invalid OAuth state" });
+      return res.status(403).json({ error: "Invalid OAuth state" });
     }
 
-    if (!code || typeof code !== "string") {
-      return res.status(400).json({ error: "Missing authorization code" });
-    }
 
     const redirectUri = callbackUri(req);
 

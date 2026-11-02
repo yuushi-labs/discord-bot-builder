@@ -42,7 +42,7 @@ describe("Discord OAuth state", () => {
     const missing = await fetch(`${base}/api/discord/callback?code=test`, {
       redirect: "manual",
     });
-    expect(missing.status).toBe(400);
+    expect(missing.status).toBe(403);
     const login = await fetch(`${base}/api/discord/login`, {
       redirect: "manual",
     });
@@ -51,7 +51,7 @@ describe("Discord OAuth state", () => {
       `${base}/api/discord/callback?code=test&state=${"a".repeat(43)}`,
       { headers: { cookie }, redirect: "manual" }
     );
-    expect(mismatch.status).toBe(400);
+    expect(mismatch.status).toBe(403);
     expect(mismatch.headers.get("set-cookie")).toContain(
       "Expires=Thu, 01 Jan 1970"
     );
@@ -81,7 +81,7 @@ describe("Discord OAuth state", () => {
       `${base}/api/discord/callback?code=test&state=${state}`,
       { redirect: "manual" }
     );
-    expect(replay.status).toBe(400);
+    expect(replay.status).toBe(403);
     expect(axios.post).toHaveBeenCalledOnce();
   });
 });
