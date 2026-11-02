@@ -26,6 +26,8 @@ export function restoreWorkspace(
           workspace
         );
       } catch (error) {
+        // Discard any blocks the failed server load created before reporting it.
+        workspace.clear();
         return { restoredDraft: false, draftError, serverError: error };
       }
     }

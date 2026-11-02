@@ -91,7 +91,7 @@ FLUSH PRIVILEGES;
 
 <!-- coderabbit-ai-generated:v1 -->
 
-<!-- coderabbit-ai-generated-section:v1:55f59e1fa6da76329cda3a2c0bfdae36cb1fc88d8bfe54e374514a6eae913743 -->
+<!-- coderabbit-ai-generated-section:v1:164968473b5d2bc0553fd2c0f719c4bdf1908a8e08f26c1cbba319c3a9b61ad2 -->
 
 ```env
 # Database
@@ -112,8 +112,8 @@ TOKEN_ENCRYPTION_KEY=your_base64_encoded_32_byte_key
 # Discord callback (required in production)
 OAUTH_CALLBACK_URL=https://your-domain.example/api/discord/callback
 
-# OAuth Server
-OAUTH_SERVER_URL=http://localhost:3000
+# Manus 認証サービスのベース URL（利用する場合）
+OAUTH_SERVER_URL=https://your-manus-auth-service.example
 
 # Owner Info
 OWNER_NAME=YourName

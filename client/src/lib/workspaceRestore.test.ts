@@ -80,4 +80,21 @@ describe("workspace restoration", () => {
     expect(Blockly.Events.isEnabled()).toBe(true);
     workspace.dispose();
   });
+  it("clears partially loaded blocks when the server copy is invalid", () => {
+    const workspace = new Blockly.Workspace();
+    const serverCopy = JSON.stringify({
+      blocks: {
+        languageVersion: 0,
+        blocks: [
+          { type: "discord_on_ready", id: "partial" },
+          { type: "not_a_block", id: "invalid" },
+        ],
+      },
+    });
+    const result = restoreWorkspace(workspace, null, serverCopy);
+    expect(result.serverError).toBeDefined();
+    expect(workspace.getAllBlocks(false)).toEqual([]);
+    expect(Blockly.Events.isEnabled()).toBe(true);
+    workspace.dispose();
+  });
 });

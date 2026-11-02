@@ -147,6 +147,13 @@ export default function Editor({ params }: { params: { id: string } }) {
     if (serverError) {
       console.error("Failed to load server workspace:", serverError);
       setLoadError(true);
+      // A failed load must not produce editable drafts or overwrite server data.
+      workspace.current.dispose();
+      workspace.current = Blockly.inject(blocklyDiv.current, {
+        ...workspaceOptions,
+        toolbox: undefined,
+        readOnly: true,
+      });
     }
 
     if (restoredDraft) {
@@ -175,7 +182,7 @@ export default function Editor({ params }: { params: { id: string } }) {
         }
       }
     };
-    currentWorkspace.addChangeListener(onChange);
+    if (!serverError) currentWorkspace.addChangeListener(onChange);
     const observer = new ResizeObserver(() =>
       Blockly.svgResize(currentWorkspace)
     );
@@ -184,7 +191,7 @@ export default function Editor({ params }: { params: { id: string } }) {
 
     return () => {
       observer.disconnect();
-      currentWorkspace.removeChangeListener(onChange);
+      if (!serverError) currentWorkspace.removeChangeListener(onChange);
       if (workspace.current) {
         workspace.current.dispose();
         workspace.current = null;
