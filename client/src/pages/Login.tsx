@@ -1,6 +1,14 @@
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { getLoginUrl } from "@/const";
+import { toast } from "sonner";
 import { useLocation } from "wouter";
 import { useEffect } from "react";
 
@@ -15,21 +23,14 @@ export default function Login() {
   }, [user, loading, navigate]);
 
   const handleDiscordLogin = () => {
-    const clientId = import.meta.env.VITE_DISCORD_CLIENT_ID || "";
-    if (!clientId) {
-      alert("Discord Client ID が設定されていません");
-      return;
+    try {
+      window.location.href = getLoginUrl();
+    } catch (error) {
+      console.error("[Auth] Unable to build login URL", error);
+      toast.error("Discord Client ID が設定されていません", {
+        description: ".env の VITE_DISCORD_CLIENT_ID を設定してください。",
+      });
     }
-    const redirectUri = `${window.location.origin}/api/discord/callback`;
-    const scopes = ["identify", "email"];
-
-    const discordAuthUrl = new URL("https://discord.com/api/oauth2/authorize");
-    discordAuthUrl.searchParams.set("client_id", clientId);
-    discordAuthUrl.searchParams.set("redirect_uri", redirectUri);
-    discordAuthUrl.searchParams.set("response_type", "code");
-    discordAuthUrl.searchParams.set("scope", scopes.join(" "));
-
-    window.location.href = discordAuthUrl.toString();
   };
 
   if (loading) {
@@ -81,9 +82,7 @@ export default function Login() {
               <div className="w-full border-t border-border"></div>
             </div>
             <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-card text-muted-foreground">
-                または
-              </span>
+              <span className="px-2 bg-card text-muted-foreground">または</span>
             </div>
           </div>
 

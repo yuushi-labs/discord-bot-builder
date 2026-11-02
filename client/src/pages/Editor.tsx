@@ -8,7 +8,7 @@ import { useLocation } from "wouter";
 import { ArrowLeft, Download } from "lucide-react";
 import * as Blockly from "blockly";
 import { defineDiscordBlocks } from "@/lib/blocklyBlocks";
-import { generatePythonCode as generatePythonCodeNew } from "@/lib/pythonCodeGenerator";
+import { generatePythonCode } from "@/lib/pythonCodeGenerator";
 
 export default function Editor({ params }: { params: { id: string } }) {
   const id = params.id;
@@ -81,12 +81,22 @@ export default function Editor({ params }: { params: { id: string } }) {
         </category>
         <category name="ユーティリティ" colour="45">
           <block type="discord_print"></block>
+          <block type="discord_wait"></block>
+        </category>
+        <category name="応用" colour="290">
+          <block type="discord_conditional_message"></block>
+          <block type="discord_get_all_servers"></block>
+          <block type="discord_get_server_by_name"></block>
+          <block type="discord_broadcast_to_servers"></block>
+          <block type="discord_schedule_task"></block>
+          <block type="discord_schedule_daily"></block>
         </category>
       </xml>
     `;
 
     const workspaceOptions: Blockly.BlocklyOptions = {
-      toolbox: new DOMParser().parseFromString(toolboxXml, "text/xml").documentElement,
+      toolbox: new DOMParser().parseFromString(toolboxXml, "text/xml")
+        .documentElement,
       grid: { spacing: 20, length: 3, colour: "#ccc", snap: true },
       zoom: { controls: true, wheel: true, startScale: 1 },
     };
@@ -134,7 +144,9 @@ export default function Editor({ params }: { params: { id: string } }) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <p className="text-muted-foreground mb-4">プロジェクトが見つかりません</p>
+          <p className="text-muted-foreground mb-4">
+            プロジェクトが見つかりません
+          </p>
           <Button onClick={() => navigate("/dashboard", { replace: true })}>
             ダッシュボードに戻る
           </Button>
@@ -147,7 +159,9 @@ export default function Editor({ params }: { params: { id: string } }) {
     if (!workspace.current) return;
 
     try {
-      const workspaceData = Blockly.serialization.workspaces.save(workspace.current);
+      const workspaceData = Blockly.serialization.workspaces.save(
+        workspace.current
+      );
       await updateMutation.mutateAsync({
         id: projectId,
         blocklyWorkspace: JSON.stringify(workspaceData),
@@ -164,10 +178,11 @@ export default function Editor({ params }: { params: { id: string } }) {
 
     setIsExporting(true);
     try {
-      const code = generatePythonCode(workspace.current);
+      const code = generatePythonCode(workspace.current, {
+        tokenExpr: "DISCORD_TOKEN",
+      });
 
-      const exportCode =
-        `DISCORD_TOKEN = ${JSON.stringify(project.discordToken || "")}\n\n${code}`;
+      const exportCode = `DISCORD_TOKEN = ${JSON.stringify(project.discordToken || "")}\n\n${code}`;
 
       const element = document.createElement("a");
       element.setAttribute(
@@ -209,7 +224,11 @@ export default function Editor({ params }: { params: { id: string } }) {
           <Button variant="outline" onClick={handleSave}>
             保存
           </Button>
-          <Button onClick={handleExport} disabled={isExporting} className="gap-2">
+          <Button
+            onClick={handleExport}
+            disabled={isExporting}
+            className="gap-2"
+          >
             <Download className="w-4 h-4" />
             {isExporting ? "エクスポート中..." : "エクスポート"}
           </Button>
@@ -226,9 +245,4 @@ export default function Editor({ params }: { params: { id: string } }) {
       </div>
     </div>
   );
-}
-
-// Use the new Python code generator
-function generatePythonCode(workspace: Blockly.WorkspaceSvg): string {
-  return generatePythonCodeNew(workspace);
 }

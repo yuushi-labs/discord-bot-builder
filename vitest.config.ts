@@ -13,7 +13,15 @@ export default defineConfig({
     },
   },
   test: {
-    environment: "node",
-    include: ["server/**/*.test.ts", "server/**/*.spec.ts"],
+    // jsdom is required because the Blockly workspace and several client
+    // modules touch `document`/`window` at import time.
+    environment: "jsdom",
+    include: [
+      "server/**/*.test.ts",
+      "server/**/*.spec.ts",
+      "client/**/*.test.ts",
+      "client/**/*.spec.ts",
+    ],
+    exclude: ["node_modules/**", "dist/**"],
   },
 });
