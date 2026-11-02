@@ -95,8 +95,7 @@ export default function Editor({ params }: { params: { id: string } }) {
     `;
 
     const workspaceOptions: Blockly.BlocklyOptions = {
-      toolbox: new DOMParser().parseFromString(toolboxXml, "text/xml")
-        .documentElement,
+      toolbox: toolboxXml,
       grid: { spacing: 20, length: 3, colour: "#ccc", snap: true },
       zoom: { controls: true, wheel: true, startScale: 1 },
     };
