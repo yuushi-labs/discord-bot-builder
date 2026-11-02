@@ -9,6 +9,7 @@ import { ArrowLeft, Download } from "lucide-react";
 import * as Blockly from "blockly";
 import { defineDiscordBlocks } from "@/lib/blocklyBlocks";
 import { generatePythonCode } from "@/lib/pythonCodeGenerator";
+import { restoreWorkspace } from "@/lib/workspaceRestore";
 
 export default function Editor({ params }: { params: { id: string } }) {
   const id = params.id;
@@ -33,6 +34,7 @@ export default function Editor({ params }: { params: { id: string } }) {
     { enabled: !!user && !isNaN(projectId) }
   );
   const updateMutation = trpc.projects.update.useMutation();
+  const utils = trpc.useUtils();
 
   useEffect(() => {
     if (!blocklyDiv.current || !project) return;
@@ -120,33 +122,31 @@ export default function Editor({ params }: { params: { id: string } }) {
     revision.current = 0;
 
     const draftKey = `workspace-draft:${user!.id}:${project.id}`;
-    let savedWorkspace = project.blocklyWorkspace;
-    let restoredDraft = false;
+    let draft: string | null = null;
     try {
-      const draft = sessionStorage.getItem(draftKey);
-      if (draft) {
-        savedWorkspace = draft;
-        restoredDraft = true;
-      }
+      draft = sessionStorage.getItem(draftKey);
     } catch {
       toast.error(
         "下書き保存を利用できません。ページを離れる前に保存してください。"
       );
     }
 
-    if (savedWorkspace) {
-      try {
-        Blockly.Events.disable();
-        Blockly.serialization.workspaces.load(
-          JSON.parse(savedWorkspace),
-          workspace.current
-        );
-      } catch (error) {
-        console.error("Failed to load workspace:", error);
-        setLoadError(true);
-      } finally {
-        Blockly.Events.enable();
-      }
+    const { restoredDraft, draftError, serverError } = restoreWorkspace(
+      workspace.current,
+      draft,
+      project.blocklyWorkspace
+    );
+    if (draftError) {
+      console.error("Failed to load local draft:", draftError);
+      toast.error(
+        serverError
+          ? "下書きを読み込めませんでした。"
+          : "下書きを読み込めませんでした。サーバーの保存データを使用します。"
+      );
+    }
+    if (serverError) {
+      console.error("Failed to load server workspace:", serverError);
+      setLoadError(true);
     }
 
     if (restoredDraft) {
@@ -251,10 +251,12 @@ export default function Editor({ params }: { params: { id: string } }) {
       const workspaceData = Blockly.serialization.workspaces.save(
         workspace.current
       );
-      await updateMutation.mutateAsync({
-        id: projectId,
-        blocklyWorkspace: JSON.stringify(workspaceData),
-      });
+      const blocklyWorkspace = JSON.stringify(workspaceData);
+      await updateMutation.mutateAsync({ id: projectId, blocklyWorkspace });
+      await utils.projects.get.cancel({ id: projectId });
+      utils.projects.get.setData({ id: projectId }, previous =>
+        previous ? { ...previous, blocklyWorkspace } : previous
+      );
       if (revision.current === savedRevision) {
         setDirty(false);
         try {

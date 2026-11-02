@@ -134,7 +134,7 @@ VITE_APP_LOGO=https://example.com/logo.png
 
 <!-- coderabbit-ai-generated:v1 -->
 
-<!-- coderabbit-ai-generated-section:v1:cf9925bbf4135d6aaf11dd7885377063df5980ac900147b08907f6453bcf75de -->
+<!-- coderabbit-ai-generated-section:v1:0975dce4e4e60060f58f9aaf41baa1e2663fd18e42db0fe5b0861b9dd21006ff -->
 
 | 変数名 | 説明 | 例 |
 | --- | --- | --- |
@@ -143,9 +143,8 @@ VITE_APP_LOGO=https://example.com/logo.png
 | `DISCORD_CLIENT_SECRET` | Discord クライアントシークレット | `abc123...` |
 | `JWT_SECRET` | JWT 署名用シークレット | 32 文字以上のランダム文字列 |
 | `TOKEN_ENCRYPTION_KEY` | トークン暗号化用の鍵 | `openssl rand -base64 32` で生成 |
-| `OAUTH_SERVER_URL` | OAuth コールバック URL | `http://localhost:3000` |
+| `OAUTH_SERVER_URL` | Manus 認証サービスのベース URL | 認証サービスの URL |
 | `OAUTH_CALLBACK_URL` | 本番では必須。Discord に登録した HTTPS コールバック URL | `https://your-domain.example/api/discord/callback` |
-
 
 <!-- /coderabbit-ai-generated:v1 -->
 ---
