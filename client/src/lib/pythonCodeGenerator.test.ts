@@ -380,4 +380,12 @@ describe("Python Code Generator", () => {
     }
   );
 
+  it("normalizes dynamic daily times like the literal time path", () => {
+    const schedule = workspace.newBlock("discord_schedule_daily");
+    const time = workspace.newBlock("discord_get_variable");
+    time.setFieldValue("daily_time", "VAR");
+    schedule.getInput("TIME")!.connection!.connect(time.outputConnection!);
+    expect(generatePythonCode(workspace)).toContain("if now == str(daily_time).strip().zfill(5):");
+  });
+
 });
