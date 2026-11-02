@@ -78,10 +78,12 @@ function stateCookie(req: Request) {
   };
 }
 
-function callbackUri(req: Request): string {
+function callbackUri(req: Request): string | undefined {
   return (
     process.env.OAUTH_CALLBACK_URL ||
-    `${req.protocol}://${req.get("host")}/api/discord/callback`
+    (process.env.NODE_ENV === "production"
+      ? undefined
+      : `${req.protocol}://${req.get("host")}/api/discord/callback`)
   );
 }
 
@@ -89,12 +91,15 @@ export function startDiscordLogin(req: Request, res: Response) {
   if (!ENV.discordClientId || !ENV.jwtSecret) {
     return res.status(503).send("Discord login is not configured");
   }
+  const redirectUri = callbackUri(req);
+  if (!redirectUri)
+    return res.status(503).send("OAUTH_CALLBACK_URL is required in production");
   const state = randomBytes(32).toString("base64url");
   const cookie = stateCookie(req);
   res.cookie(cookie.name, state, { ...cookie.options, maxAge: 10 * 60 * 1000 });
   const url = new URL("https://discord.com/api/oauth2/authorize");
   url.searchParams.set("client_id", ENV.discordClientId);
-  url.searchParams.set("redirect_uri", callbackUri(req));
+  url.searchParams.set("redirect_uri", redirectUri);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("scope", "identify email");
   url.searchParams.set("state", state);
@@ -124,8 +129,11 @@ export async function handleDiscordCallback(req: Request, res: Response) {
       return res.status(403).json({ error: "Invalid OAuth state" });
     }
 
-
     const redirectUri = callbackUri(req);
+    if (!redirectUri)
+      return res
+        .status(503)
+        .json({ error: "OAUTH_CALLBACK_URL is required in production" });
 
     const tokenData = await exchangeDiscordCode(code, redirectUri);
     const discordUser = await getDiscordUser(tokenData.access_token);

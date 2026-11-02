@@ -169,12 +169,20 @@ export default function Dashboard() {
           </Dialog>
         </div>
 
+        {isError && projects !== undefined && (
+          <div role="alert" className="mb-4 flex items-center gap-3">
+            <p>更新に失敗しました。前回取得した一覧を表示しています。</p>
+            <Button variant="outline" onClick={() => refetch()}>
+              再読み込み
+            </Button>
+          </div>
+        )}
         {/* Projects Grid */}
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
             <Spinner />
           </div>
-        ) : isError ? (
+        ) : isError && projects === undefined ? (
           <Card>
             <CardContent className="py-12 text-center" role="alert">
               <p className="mb-4">プロジェクト一覧を読み込めませんでした。</p>

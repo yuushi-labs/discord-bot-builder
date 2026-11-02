@@ -89,6 +89,10 @@ FLUSH PRIVILEGES;
 
 プロジェクトルートに `.env` ファイルを作成し、以下の変数を設定してください：
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:55f59e1fa6da76329cda3a2c0bfdae36cb1fc88d8bfe54e374514a6eae913743 -->
+
 ```env
 # Database
 DATABASE_URL=mysql://bot_user:secure_password@localhost:3306/discord_bot_builder
@@ -98,9 +102,6 @@ DISCORD_CLIENT_ID=your_client_id_here
 DISCORD_CLIENT_SECRET=your_client_secret_here
 VITE_DISCORD_CLIENT_ID=your_client_id_here
 
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:58b06c306415c3de24725f95cd7cab9189ea8a86272139a2774ccd72fd4b6b41 -->
 
 # JWT Secret
 JWT_SECRET=your_jwt_secret_here_minimum_32_characters
@@ -108,7 +109,8 @@ JWT_SECRET=your_jwt_secret_here_minimum_32_characters
 # Generate once with: openssl rand -base64 32
 TOKEN_ENCRYPTION_KEY=your_base64_encoded_32_byte_key
 
-<!-- /coderabbit-ai-generated:v1 -->
+# Discord callback (required in production)
+OAUTH_CALLBACK_URL=https://your-domain.example/api/discord/callback
 
 # OAuth Server
 OAUTH_SERVER_URL=http://localhost:3000
@@ -126,23 +128,26 @@ VITE_APP_TITLE=Discord Bot Builder
 VITE_APP_LOGO=https://example.com/logo.png
 ```
 
+<!-- /coderabbit-ai-generated:v1 -->
+
 ### 環境変数の説明
+
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:cf9925bbf4135d6aaf11dd7885377063df5980ac900147b08907f6453bcf75de -->
 
 | 変数名 | 説明 | 例 |
 | --- | --- | --- |
 | `DATABASE_URL` | MySQL 接続文字列 | `mysql://user:pass@host/db` |
 | `DISCORD_CLIENT_ID` | Discord アプリケーション ID | `1234567890` |
 | `DISCORD_CLIENT_SECRET` | Discord クライアントシークレット | `abc123...` |
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:44b7b6b4832f27d529ed1451c0eb978ab8ac13c8f0c4590b496f77fe2ec510ea -->
-
 | `JWT_SECRET` | JWT 署名用シークレット | 32 文字以上のランダム文字列 |
 | `TOKEN_ENCRYPTION_KEY` | トークン暗号化用の鍵 | `openssl rand -base64 32` で生成 |
+| `OAUTH_SERVER_URL` | OAuth コールバック URL | `http://localhost:3000` |
+| `OAUTH_CALLBACK_URL` | 本番では必須。Discord に登録した HTTPS コールバック URL | `https://your-domain.example/api/discord/callback` |
+
 
 <!-- /coderabbit-ai-generated:v1 -->
-| `OAUTH_SERVER_URL` | OAuth コールバック URL | `http://localhost:3000` |
-
 ---
 
 ## 起動方法

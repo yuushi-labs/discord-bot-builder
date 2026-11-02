@@ -1,5 +1,6 @@
 import {
   afterAll,
+  afterEach,
   beforeAll,
   beforeEach,
   describe,
@@ -27,6 +28,7 @@ beforeAll(async () => {
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 });
 afterAll(() => new Promise<void>(resolve => server.close(() => resolve())));
+afterEach(() => vi.unstubAllEnvs());
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(axios.post).mockResolvedValue({
@@ -84,4 +86,19 @@ describe("Discord OAuth state", () => {
     expect(replay.status).toBe(403);
     expect(axios.post).toHaveBeenCalledOnce();
   });
+  it("requires a fixed production callback and uses it behind a proxy", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("OAUTH_CALLBACK_URL", "");
+    const missing = await fetch(`${base}/api/discord/login`, { redirect: "manual" });
+    expect(missing.status).toBe(503);
+    vi.stubEnv("OAUTH_CALLBACK_URL", "https://public.example/api/discord/callback");
+    const login = await fetch(`${base}/api/discord/login`, { redirect: "manual" });
+    const location = new URL(login.headers.get("location")!);
+    expect(location.searchParams.get("redirect_uri")).toBe("https://public.example/api/discord/callback");
+    await fetch(`${base}/api/discord/callback?code=test&state=${location.searchParams.get("state")}`, {
+      headers: { cookie: login.headers.get("set-cookie")!.split(";")[0] }, redirect: "manual"
+    });
+    expect(axios.post).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ redirect_uri: "https://public.example/api/discord/callback" }), expect.anything());
+  });
+
 });

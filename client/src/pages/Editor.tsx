@@ -119,11 +119,26 @@ export default function Editor({ params }: { params: { id: string } }) {
     setDirty(false);
     revision.current = 0;
 
-    if (project.blocklyWorkspace) {
+    const draftKey = `workspace-draft:${user!.id}:${project.id}`;
+    let savedWorkspace = project.blocklyWorkspace;
+    let restoredDraft = false;
+    try {
+      const draft = sessionStorage.getItem(draftKey);
+      if (draft) {
+        savedWorkspace = draft;
+        restoredDraft = true;
+      }
+    } catch {
+      toast.error(
+        "下書き保存を利用できません。ページを離れる前に保存してください。"
+      );
+    }
+
+    if (savedWorkspace) {
       try {
         Blockly.Events.disable();
         Blockly.serialization.workspaces.load(
-          JSON.parse(project.blocklyWorkspace),
+          JSON.parse(savedWorkspace),
           workspace.current
         );
       } catch (error) {
@@ -134,11 +149,30 @@ export default function Editor({ params }: { params: { id: string } }) {
       }
     }
 
+    if (restoredDraft) {
+      setDirty(true);
+      revision.current = 1;
+      toast.info(
+        "未保存の下書きを復元しました。保存して変更を確定してください。"
+      );
+    }
     const currentWorkspace = workspace.current;
     const onChange = (event: Blockly.Events.Abstract) => {
       if (!event.isUiEvent) {
         revision.current += 1;
         setDirty(true);
+        try {
+          sessionStorage.setItem(
+            draftKey,
+            JSON.stringify(
+              Blockly.serialization.workspaces.save(currentWorkspace)
+            )
+          );
+        } catch {
+          toast.error(
+            "下書きを保存できません。ページを離れる前に保存してください。"
+          );
+        }
       }
     };
     currentWorkspace.addChangeListener(onChange);
@@ -221,7 +255,16 @@ export default function Editor({ params }: { params: { id: string } }) {
         id: projectId,
         blocklyWorkspace: JSON.stringify(workspaceData),
       });
-      if (revision.current === savedRevision) setDirty(false);
+      if (revision.current === savedRevision) {
+        setDirty(false);
+        try {
+          sessionStorage.removeItem(
+            `workspace-draft:${user!.id}:${project.id}`
+          );
+        } catch {
+          /* The server save succeeded even when local storage is unavailable. */
+        }
+      }
       toast.success("ワークスペースを保存しました");
     } catch (error) {
       toast.error("保存に失敗しました");
@@ -234,10 +277,9 @@ export default function Editor({ params }: { params: { id: string } }) {
 
     setIsExporting(true);
     try {
-      const exportCode = generatePythonCode(
-        workspace.current,
-        { tokenExpr: JSON.stringify(project.discordToken) }
-      );
+      const exportCode = generatePythonCode(workspace.current, {
+        tokenExpr: JSON.stringify(project.discordToken),
+      });
 
       const element = document.createElement("a");
       element.setAttribute(
