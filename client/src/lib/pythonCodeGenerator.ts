@@ -495,7 +495,7 @@ function statementBlockToCode(
           1,
           `now = datetime.now(${DEFAULT_TIMEZONE}).strftime('%H:%M')`
         );
-        guarded.line(1, `if now == ${time}:`);
+        guarded.line(1, `if now == str(${time}).strip().zfill(5):`);
         const inner = new CodeWriter();
         emitBody(block, "DO", ctx, inner, 2);
         ctx.taskDefs.push(
@@ -614,6 +614,9 @@ export function generatePythonCode(
 
   for (const block of workspace.getTopBlocks(true)) {
     if (isEventBlock(block.type)) {
+      if (ctx.events.some(event => event.name === EVENT_SIGNATURES[block.type].name)) {
+        throw new Error("同じイベントのブロックは1つだけ配置してください");
+      }
       ctx.events.push(buildEventHandler(block, ctx));
       continue;
     }

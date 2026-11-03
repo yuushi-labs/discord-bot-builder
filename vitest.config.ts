@@ -5,6 +5,7 @@ const templateRoot = path.resolve(import.meta.dirname);
 
 export default defineConfig({
   root: templateRoot,
+  esbuild: { jsx: "automatic" },
   resolve: {
     alias: {
       "@": path.resolve(templateRoot, "client", "src"),
@@ -16,6 +17,7 @@ export default defineConfig({
     // jsdom is required because the Blockly workspace and several client
     // modules touch `document`/`window` at import time.
     environment: "jsdom",
+    environmentMatchGlobs: [["server/**", "node"]],
     include: [
       "server/**/*.test.ts",
       "server/**/*.spec.ts",

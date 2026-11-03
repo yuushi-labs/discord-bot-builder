@@ -7,8 +7,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { getLoginUrl } from "@/const";
-import { toast } from "sonner";
 import { useLocation } from "wouter";
 import { useEffect } from "react";
 
@@ -23,14 +21,7 @@ export default function Login() {
   }, [user, loading, navigate]);
 
   const handleDiscordLogin = () => {
-    try {
-      window.location.href = getLoginUrl();
-    } catch (error) {
-      console.error("[Auth] Unable to build login URL", error);
-      toast.error("Discord Client ID が設定されていません", {
-        description: ".env の VITE_DISCORD_CLIENT_ID を設定してください。",
-      });
-    }
+    window.location.href = "/api/discord/login";
   };
 
   if (loading) {

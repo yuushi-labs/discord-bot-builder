@@ -25,10 +25,17 @@ Discord Bot をノーコードで構築・管理できる Web アプリケーシ
 
 ### 前提条件
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:e878e13c62bf57f9e3167d9c8d05882189d92acbf1f17d28eaeafac43f860cef -->
+
 - Node.js 18.0 以上
 - npm または pnpm
 - MySQL 8.0 以上
 - Discord Developer Account
+- Python 3（テスト時に必要。実行ファイルは `PYTHON` 環境変数で指定可能）
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 ### インストール
 
@@ -176,7 +183,21 @@ discord-bot-builder/
 
 ---
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:5acfb77f1d7160897b7a27e4679025c332e110b94831c134068c302484d6afff -->
+
+## 既存トークンの暗号化
+
+新規・既存の環境で `TOKEN_ENCRYPTION_KEY` に `openssl rand -base64 32` で生成した鍵を設定してください。JWT 鍵とは別に保管し、再起動後も同じ鍵を使います。鍵を紛失すると保存したトークンを復号できません。
+
+既存データベースを更新する場合は、アプリを停止して書き込みを止め、データベースをバックアップしたうえで `pnpm tokens:migrate` を実行してください。Bot トークンと Discord OAuth キャッシュのトークンを一括で暗号化します。成功後にアプリを起動してください。移行は再実行できます。バックアップには移行前の平文が残るため、安全に保管してください。
+
+プロジェクト取得 API とエクスポートした Python ファイルには Bot トークンが含まれます。HTTPS を使用し、出力ファイルを秘密として扱ってください。
+
 ## 🔐 セキュリティ
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 - Discord OAuth 2.0 による安全な認証
 - JWT トークンによるセッション管理

@@ -3,9 +3,10 @@ import axios from "axios";
 import { upsertUser } from "./db";
 import type { Request, Response } from "express";
 import { getSessionCookieOptions } from "./_core/cookies";
-import { COOKIE_NAME, DISCORD_OAUTH_STATE_COOKIE } from "@shared/const";
-import { parse as parseCookieHeader } from "cookie";
+import { COOKIE_NAME } from "@shared/const";
 import * as jose from "jose";
+import { randomBytes, timingSafeEqual } from "node:crypto";
+import { parse as parseCookies } from "cookie";
 
 const DISCORD_API_BASE = "https://discord.com/api/v10";
 
@@ -69,49 +70,70 @@ export async function getDiscordUser(
   return response.data;
 }
 
+function stateCookie(req: Request) {
+  const options = getSessionCookieOptions(req);
+  return {
+    name: options.secure ? "__Host-discord_oauth_state" : "discord_oauth_state",
+    options: { ...options, sameSite: "lax" as const, path: "/" },
+  };
+}
+
+function callbackUri(req: Request): string | undefined {
+  return (
+    process.env.OAUTH_CALLBACK_URL ||
+    (process.env.NODE_ENV === "production"
+      ? undefined
+      : `${req.protocol}://${req.get("host")}/api/discord/callback`)
+  );
+}
+
+export function startDiscordLogin(req: Request, res: Response) {
+  if (!ENV.discordClientId || !ENV.jwtSecret) {
+    return res.status(503).send("Discord login is not configured");
+  }
+  const redirectUri = callbackUri(req);
+  if (!redirectUri)
+    return res.status(503).send("OAUTH_CALLBACK_URL is required in production");
+  const state = randomBytes(32).toString("base64url");
+  const cookie = stateCookie(req);
+  res.cookie(cookie.name, state, { ...cookie.options, maxAge: 10 * 60 * 1000 });
+  const url = new URL("https://discord.com/api/oauth2/authorize");
+  url.searchParams.set("client_id", ENV.discordClientId);
+  url.searchParams.set("redirect_uri", redirectUri);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("scope", "identify email");
+  url.searchParams.set("state", state);
+  return res.redirect(url.toString());
+}
+
 /**
  * Handle Discord OAuth callback
  */
 export async function handleDiscordCallback(req: Request, res: Response) {
   try {
     const { code, state } = req.query;
-
     if (!code || typeof code !== "string") {
       return res.status(400).json({ error: "Missing authorization code" });
     }
 
-    const cookies = parseCookieHeader(req.headers.cookie ?? "");
-    const storedValue = cookies[DISCORD_OAUTH_STATE_COOKIE] ?? "";
-    const separator = storedValue.indexOf(":");
-    const expectedState =
-      separator === -1 ? storedValue : storedValue.slice(0, separator);
-    // The cookie parser already percent-decodes the value, so the suffix is
-    // the plain redirect URI.
-    const storedRedirectUri =
-      separator === -1 ? null : storedValue.slice(separator + 1);
-
-    // Verify the state issued to this browser before accepting the code.
+    const cookie = stateCookie(req);
+    const expected = parseCookies(req.headers.cookie || "")[cookie.name];
+    res.clearCookie(cookie.name, cookie.options);
     if (
-      !state ||
       typeof state !== "string" ||
-      !expectedState ||
-      state !== expectedState
+      !expected ||
+      !/^[A-Za-z0-9_-]{43}$/.test(state) ||
+      !/^[A-Za-z0-9_-]{43}$/.test(expected) ||
+      !timingSafeEqual(Buffer.from(state), Buffer.from(expected))
     ) {
       return res.status(403).json({ error: "Invalid OAuth state" });
     }
 
-    // The state is single-use; clear it now that it has been validated.
-    const baseCookieOptions = getSessionCookieOptions(req);
-    res.clearCookie(DISCORD_OAUTH_STATE_COOKIE, {
-      ...baseCookieOptions,
-      maxAge: undefined,
-    });
-
-    // Reuse the exact redirect URI the browser used so it matches the value
-    // sent during authorization (Discord rejects a mismatched redirect_uri).
-    const redirectUri =
-      storedRedirectUri ??
-      `${req.protocol}://${req.get("host")}/api/discord/callback`;
+    const redirectUri = callbackUri(req);
+    if (!redirectUri)
+      return res
+        .status(503)
+        .json({ error: "OAUTH_CALLBACK_URL is required in production" });
 
     const tokenData = await exchangeDiscordCode(code, redirectUri);
     const discordUser = await getDiscordUser(tokenData.access_token);
@@ -136,11 +158,12 @@ export async function handleDiscordCallback(req: Request, res: Response) {
       .setExpirationTime("7d")
       .sign(secret);
 
-    res.cookie(COOKIE_NAME, token, baseCookieOptions);
+    const cookieOptions = getSessionCookieOptions(req);
+    res.cookie(COOKIE_NAME, token, cookieOptions);
 
     return res.redirect("/dashboard");
   } catch (error) {
-    console.error("Discord OAuth error:", error);
+    console.error("Discord OAuth callback failed");
     return res.status(500).json({ error: "OAuth callback failed" });
   }
 }

@@ -89,6 +89,10 @@ FLUSH PRIVILEGES;
 
 プロジェクトルートに `.env` ファイルを作成し、以下の変数を設定してください：
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:164968473b5d2bc0553fd2c0f719c4bdf1908a8e08f26c1cbba319c3a9b61ad2 -->
+
 ```env
 # Database
 DATABASE_URL=mysql://bot_user:secure_password@localhost:3306/discord_bot_builder
@@ -98,11 +102,18 @@ DISCORD_CLIENT_ID=your_client_id_here
 DISCORD_CLIENT_SECRET=your_client_secret_here
 VITE_DISCORD_CLIENT_ID=your_client_id_here
 
+
 # JWT Secret
 JWT_SECRET=your_jwt_secret_here_minimum_32_characters
 
-# OAuth Server
-OAUTH_SERVER_URL=http://localhost:3000
+# Generate once with: openssl rand -base64 32
+TOKEN_ENCRYPTION_KEY=your_base64_encoded_32_byte_key
+
+# Discord callback (required in production)
+OAUTH_CALLBACK_URL=https://your-domain.example/api/discord/callback
+
+# Manus 認証サービスのベース URL（利用する場合）
+OAUTH_SERVER_URL=https://your-manus-auth-service.example
 
 # Owner Info
 OWNER_NAME=YourName
@@ -117,7 +128,13 @@ VITE_APP_TITLE=Discord Bot Builder
 VITE_APP_LOGO=https://example.com/logo.png
 ```
 
+<!-- /coderabbit-ai-generated:v1 -->
+
 ### 環境変数の説明
+
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:0975dce4e4e60060f58f9aaf41baa1e2663fd18e42db0fe5b0861b9dd21006ff -->
 
 | 変数名 | 説明 | 例 |
 | --- | --- | --- |
@@ -125,8 +142,11 @@ VITE_APP_LOGO=https://example.com/logo.png
 | `DISCORD_CLIENT_ID` | Discord アプリケーション ID | `1234567890` |
 | `DISCORD_CLIENT_SECRET` | Discord クライアントシークレット | `abc123...` |
 | `JWT_SECRET` | JWT 署名用シークレット | 32 文字以上のランダム文字列 |
-| `OAUTH_SERVER_URL` | OAuth コールバック URL | `http://localhost:3000` |
+| `TOKEN_ENCRYPTION_KEY` | トークン暗号化用の鍵 | `openssl rand -base64 32` で生成 |
+| `OAUTH_SERVER_URL` | Manus 認証サービスのベース URL | 認証サービスの URL |
+| `OAUTH_CALLBACK_URL` | 本番では必須。Discord に登録した HTTPS コールバック URL | `https://your-domain.example/api/discord/callback` |
 
+<!-- /coderabbit-ai-generated:v1 -->
 ---
 
 ## 起動方法

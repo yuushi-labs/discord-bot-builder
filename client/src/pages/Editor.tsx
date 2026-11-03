@@ -9,6 +9,7 @@ import { ArrowLeft, Download } from "lucide-react";
 import * as Blockly from "blockly";
 import { defineDiscordBlocks } from "@/lib/blocklyBlocks";
 import { generatePythonCode } from "@/lib/pythonCodeGenerator";
+import { restoreWorkspace } from "@/lib/workspaceRestore";
 
 export default function Editor({ params }: { params: { id: string } }) {
   const id = params.id;
@@ -18,13 +19,22 @@ export default function Editor({ params }: { params: { id: string } }) {
   const workspace = useRef<Blockly.WorkspaceSvg | null>(null);
   const [projectName, setProjectName] = useState<string>("");
   const [isExporting, setIsExporting] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const revision = useRef(0);
 
   const projectId = parseInt(id || "0", 10);
-  const { data: project, isLoading } = trpc.projects.get.useQuery(
+  const {
+    data: project,
+    isLoading,
+    isError,
+    refetch,
+  } = trpc.projects.get.useQuery(
     { id: projectId },
     { enabled: !!user && !isNaN(projectId) }
   );
   const updateMutation = trpc.projects.update.useMutation();
+  const utils = trpc.useUtils();
 
   useEffect(() => {
     if (!blocklyDiv.current || !project) return;
@@ -106,25 +116,100 @@ export default function Editor({ params }: { params: { id: string } }) {
 
     workspace.current = Blockly.inject(blocklyDiv.current, workspaceOptions);
     setProjectName(project.name);
+    setLoadError(false);
+    setDirty(false);
+    revision.current = 0;
 
-    if (project.blocklyWorkspace) {
-      try {
-        Blockly.serialization.workspaces.load(
-          JSON.parse(project.blocklyWorkspace),
-          workspace.current
-        );
-      } catch (error) {
-        console.error("Failed to load workspace:", error);
-      }
+    const draftKey = `workspace-draft:${user!.id}:${project.id}`;
+    let draft: string | null = null;
+    try {
+      draft = sessionStorage.getItem(draftKey);
+    } catch {
+      toast.error(
+        "下書き保存を利用できません。ページを離れる前に保存してください。"
+      );
     }
 
+    const { restoredDraft, draftError, serverError } = restoreWorkspace(
+      workspace.current,
+      draft,
+      project.blocklyWorkspace
+    );
+    if (draftError) {
+      console.error("Failed to load local draft:", draftError);
+      toast.error(
+        serverError
+          ? "下書きを読み込めませんでした。"
+          : "下書きを読み込めませんでした。サーバーの保存データを使用します。"
+      );
+    }
+    if (serverError) {
+      console.error("Failed to load server workspace:", serverError);
+      setLoadError(true);
+      // A failed load must not produce editable drafts or overwrite server data.
+      workspace.current.dispose();
+      workspace.current = Blockly.inject(blocklyDiv.current, {
+        ...workspaceOptions,
+        toolbox: undefined,
+        readOnly: true,
+      });
+    }
+
+    if (restoredDraft) {
+      setDirty(true);
+      revision.current = 1;
+      toast.info(
+        "未保存の下書きを復元しました。保存して変更を確定してください。"
+      );
+    }
+    const currentWorkspace = workspace.current;
+    const onChange = (event: Blockly.Events.Abstract) => {
+      if (!event.isUiEvent) {
+        revision.current += 1;
+        setDirty(true);
+        try {
+          sessionStorage.setItem(
+            draftKey,
+            JSON.stringify(
+              Blockly.serialization.workspaces.save(currentWorkspace)
+            )
+          );
+        } catch {
+          toast.error(
+            "下書きを保存できません。ページを離れる前に保存してください。"
+          );
+        }
+      }
+    };
+    if (!serverError) currentWorkspace.addChangeListener(onChange);
+    const observer = new ResizeObserver(() =>
+      Blockly.svgResize(currentWorkspace)
+    );
+    observer.observe(blocklyDiv.current);
+    Blockly.svgResize(currentWorkspace);
+
     return () => {
+      observer.disconnect();
+      if (!serverError) currentWorkspace.removeChangeListener(onChange);
       if (workspace.current) {
         workspace.current.dispose();
         workspace.current = null;
       }
     };
-  }, [project]);
+  }, [project?.id]);
+
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
+  useEffect(() => {
+    if (!authLoading && !user) navigate("/", { replace: true });
+  }, [authLoading, user, navigate]);
 
   if (authLoading || isLoading) {
     return (
@@ -135,8 +220,18 @@ export default function Editor({ params }: { params: { id: string } }) {
   }
 
   if (!user) {
-    navigate("/", { replace: true });
     return null;
+  }
+
+  if (isError && !project) {
+    return (
+      <div className="flex items-center justify-center min-h-screen text-center">
+        <div>
+          <p className="mb-4">プロジェクトを読み込めませんでした。</p>
+          <Button onClick={() => refetch()}>再読み込み</Button>
+        </div>
+      </div>
+    );
   }
 
   if (!project) {
@@ -158,13 +253,26 @@ export default function Editor({ params }: { params: { id: string } }) {
     if (!workspace.current) return;
 
     try {
+      const savedRevision = revision.current;
       const workspaceData = Blockly.serialization.workspaces.save(
         workspace.current
       );
-      await updateMutation.mutateAsync({
-        id: projectId,
-        blocklyWorkspace: JSON.stringify(workspaceData),
-      });
+      const blocklyWorkspace = JSON.stringify(workspaceData);
+      await updateMutation.mutateAsync({ id: projectId, blocklyWorkspace });
+      await utils.projects.get.cancel({ id: projectId });
+      utils.projects.get.setData({ id: projectId }, previous =>
+        previous ? { ...previous, blocklyWorkspace } : previous
+      );
+      if (revision.current === savedRevision) {
+        setDirty(false);
+        try {
+          sessionStorage.removeItem(
+            `workspace-draft:${user!.id}:${project.id}`
+          );
+        } catch {
+          /* The server save succeeded even when local storage is unavailable. */
+        }
+      }
       toast.success("ワークスペースを保存しました");
     } catch (error) {
       toast.error("保存に失敗しました");
@@ -177,11 +285,9 @@ export default function Editor({ params }: { params: { id: string } }) {
 
     setIsExporting(true);
     try {
-      const code = generatePythonCode(workspace.current, {
-        tokenExpr: "DISCORD_TOKEN",
+      const exportCode = generatePythonCode(workspace.current, {
+        tokenExpr: JSON.stringify(project.discordToken),
       });
-
-      const exportCode = `DISCORD_TOKEN = ${JSON.stringify(project.discordToken || "")}\n\n${code}`;
 
       const element = document.createElement("a");
       element.setAttribute(
@@ -196,7 +302,9 @@ export default function Editor({ params }: { params: { id: string } }) {
 
       toast.success("Python コードをエクスポートしました");
     } catch (error) {
-      toast.error("エクスポートに失敗しました");
+      toast.error(
+        error instanceof Error ? error.message : "エクスポートに失敗しました"
+      );
       console.error(error);
     } finally {
       setIsExporting(false);
@@ -204,28 +312,45 @@ export default function Editor({ params }: { params: { id: string } }) {
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="h-screen bg-background flex flex-col">
       {/* Header */}
-      <div className="bg-card border-b border-border px-4 py-4 flex items-center justify-between">
+      <div className="bg-card border-b border-border px-4 py-4 flex flex-wrap gap-3 items-center justify-between">
         <div className="flex items-center gap-4">
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => navigate("/dashboard", { replace: false })}
+            onClick={() => {
+              if (
+                !dirty ||
+                window.confirm("未保存の変更があります。戻りますか？")
+              )
+                navigate("/dashboard");
+            }}
             className="gap-2"
           >
             <ArrowLeft className="w-4 h-4" />
             戻る
           </Button>
-          <h1 className="text-xl font-bold text-foreground">{projectName}</h1>
+          <div>
+            <h1 className="text-xl font-bold text-foreground break-all">
+              {projectName}
+            </h1>
+            <p role="status" className="text-xs text-muted-foreground">
+              {dirty ? "未保存の変更があります" : "保存済み"}
+            </p>
+          </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={handleSave}>
-            保存
+          <Button
+            variant="outline"
+            onClick={handleSave}
+            disabled={updateMutation.isPending || loadError}
+          >
+            {updateMutation.isPending ? "保存中..." : "保存"}
           </Button>
           <Button
             onClick={handleExport}
-            disabled={isExporting}
+            disabled={isExporting || loadError}
             className="gap-2"
           >
             <Download className="w-4 h-4" />
@@ -234,8 +359,16 @@ export default function Editor({ params }: { params: { id: string } }) {
         </div>
       </div>
 
+      {loadError && (
+        <p
+          role="alert"
+          className="bg-destructive text-destructive-foreground px-4 py-2"
+        >
+          保存済みのワークスペースを読み込めませんでした。データを保護するため保存とエクスポートを停止しています。
+        </p>
+      )}
       {/* Blockly Editor */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-hidden">
         <div
           ref={blocklyDiv}
           className="w-full h-full"
