@@ -122,7 +122,8 @@ async function main() {
   );
   console.log(
     `Prepared database "${target.database}" and user "${target.user}" for hosts: ` +
-      `${target.grantHosts.join(", ")}. Now run: pnpm run db:push`
+      `${target.grantHosts.join(", ")}. Tables are created automatically on first ` +
+      `start, or run \`pnpm run db:push\` now.`
   );
   if (target.grantHosts.includes("%")) {
     console.warn(

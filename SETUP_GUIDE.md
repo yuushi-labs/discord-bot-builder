@@ -103,6 +103,10 @@ FLUSH PRIVILEGES;
 > **メモ:** パスワードは `.env` の `DATABASE_URL` に書いた値と完全に一致させてください。
 > 一致していないと `Access denied for user 'bot_user'@'localhost'` でログインに失敗します。
 
+テーブル（`users` など）はサーバー初回起動時に自動作成されます。起動前に明示的に
+作成したい場合は `pnpm run db:push` を実行してください。作成済みか確認するには
+`pnpm run db:check`（「schema ready」と表示されれば OK）を使います。
+
 #### オプション B: クラウド DB（推奨）
 
 - **Supabase**: https://supabase.com

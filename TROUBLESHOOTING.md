@@ -323,26 +323,49 @@ FLUSH PRIVILEGES;
 ```
 
 `.env` の `DATABASE_URL` も同じ値になっていることを確認してください。
-`pnpm run db:check` で接続だけを確認できます。
+`pnpm run db:check` で接続とスキーマの状態を確認できます（テーブルが無い場合は
+`pnpm run db:push` を実行してください）。
 
-### Q12: マイグレーションエラー
+### Q12: テーブルが存在しない / マイグレーションエラー
 
 **エラーメッセージ:**
+```
+Table 'discord_bot_builder.users' doesn't exist
+```
+または
 ```
 Error: Migration failed
 ```
 
-**原因:** データベーススキーマが正しく初期化されていない
+**原因:** データベースとユーザーは作成できたが、テーブル（スキーマ）がまだ
+作成されていない。`db:setup` はデータベースとユーザーだけを作成します。
 
 **解決方法:**
 ```bash
-# マイグレーションを実行
-pnpm drizzle-kit generate
-pnpm drizzle-kit migrate
+# テーブルを作成（マイグレーション実行）
+pnpm run db:push
 
-# または手動で SQL を実行
-mysql -u bot_user -p discord_bot_builder < drizzle/migrations/0001.sql
+# 作成されたか確認（"schema ready" と表示されれば OK）
+pnpm run db:check
 ```
+
+`db:push` は `drizzle/` にあるマイグレーションを適用します。通常はサーバーを
+起動するだけで自動作成されるため、この操作は必須ではありません。別の場所で
+スキーマを管理している場合は `DB_AUTO_MIGRATE=false` を設定してください。
+
+**旧手順で手動作成したデータベースの場合:** テーブルは存在するが
+`__drizzle_migrations`（適用履歴）が無い場合、起動時にスキーマが正しいことを
+確認したうえで、その状態を最新マイグレーションの適用済みとして記録します
+（`Existing schema adopted as the migration baseline.` と表示されます）。
+そのため既存テーブルが再作成されて失敗することはありません。
+
+この確認ではテーブル・カラムに加えて、`users.openId` と
+`discord_user_cache.userId` の UNIQUE 制約も検査します。手動で作成したスキーマ
+に UNIQUE 制約が無い場合は、重複データを防ぐためベースラインを記録せず、起動
+時にエラーを表示します。その場合はマイグレーションと一致するようスキーマを
+揃え、`DB_AUTO_MIGRATE=false` を解除してからサーバーを再起動してください
+（`db:push` はベースライン処理を行わないため、履歴が無い状態で実行すると
+`0000` を再適用しようとして失敗します）。
 
 ---
 

@@ -8,7 +8,7 @@ import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
-import { pingDatabase, closeDb } from "../db";
+import { pingDatabase, closeDb, hasSchema } from "../db";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -67,7 +67,14 @@ async function startServer() {
   // Login and other DB-backed features will fail until this is resolved.
   try {
     await pingDatabase();
-    console.log("[Database] Connected");
+    if (await hasSchema()) {
+      console.log("[Database] Connected (schema ready)");
+    } else {
+      console.warn(
+        "[Database] Connected, but the tables are missing. Run `pnpm run db:push` " +
+          "to create the schema (login will fail until then)."
+      );
+    }
   } catch (error) {
     console.error(
       "[Database] Not available:",
