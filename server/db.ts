@@ -1,6 +1,7 @@
 import { and, eq, getTableColumns, getTableName, sql } from "drizzle-orm";
 import { drizzle, type MySql2Database } from "drizzle-orm/mysql2";
 import { migrate } from "drizzle-orm/mysql2/migrator";
+import { readMigrationFiles } from "drizzle-orm/migrator";
 import mysql from "mysql2/promise";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -89,6 +90,40 @@ export function isMissingTableError(error: unknown): boolean {
 }
 
 /**
+ * Databases created by the older manual instructions have the application tables
+ * but no `__drizzle_migrations` history, so the migrator would replay `0000` and
+ * fail on the existing tables. When every required table and column is already
+ * present but no migration is recorded, adopt the committed migrations as the
+ * baseline so only genuinely new migrations run.
+ */
+export async function baselineMigrationsIfNeeded(db: Db): Promise<boolean> {
+  const [migrationRows] = (await db.execute(
+    sql`SELECT 1 FROM information_schema.TABLES
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '__drizzle_migrations'`
+  )) as unknown as [unknown[], unknown];
+  if (migrationRows.length > 0) return false;
+  if (!(await schemaExists(db))) return false;
+
+  const migrations = readMigrationFiles({
+    migrationsFolder: migrationsFolder(),
+  });
+  if (migrations.length === 0) return false;
+  const latest = migrations[migrations.length - 1];
+  await db.execute(
+    sql`CREATE TABLE IF NOT EXISTS __drizzle_migrations (
+          id serial PRIMARY KEY,
+          hash text NOT NULL,
+          created_at bigint
+        )`
+  );
+  await db.execute(
+    sql`INSERT INTO __drizzle_migrations (hash, created_at)
+        VALUES (${latest.hash}, ${latest.folderMillis})`
+  );
+  return true;
+}
+
+/**
  * Drizzle's MySQL migrator reads the applied-migration list and then runs the
  * pending DDL without a cross-process lock, so two instances starting together
  * can run the same CREATE TABLE. A database-wide advisory lock (which is
@@ -106,6 +141,11 @@ async function runMigrations(db: Db, pool: mysql.Pool): Promise<void> {
       throw new Error(
         "Timed out waiting for the database migration lock; another instance is " +
           "probably migrating. Retry the start, or set DB_AUTO_MIGRATE=false."
+      );
+    }
+    if (await baselineMigrationsIfNeeded(db)) {
+      console.log(
+        "[Database] Existing schema adopted as the migration baseline."
       );
     }
     await migrate(db, { migrationsFolder: migrationsFolder() });
@@ -187,8 +227,7 @@ function requiredSchema(): RequiredTable[] {
  * callers can tell "connected" from "ready". A partial schema (for example an old
  * `users` table without `openId`) is reported as not ready.
  */
-export async function hasSchema(): Promise<boolean> {
-  const db = await getDb();
+async function schemaExists(db: Db): Promise<boolean> {
   let rows: { t: string; c: string }[];
   try {
     // mysql2 returns a [rows, fields] tuple from execute().
@@ -214,6 +253,10 @@ export async function hasSchema(): Promise<boolean> {
     const found = present.get(table);
     return !!found && columns.every(column => found.has(column));
   });
+}
+
+export async function hasSchema(): Promise<boolean> {
+  return schemaExists(await getDb());
 }
 
 // Create the pool lazily on first use and reuse it afterwards.

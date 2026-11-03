@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { existsSync } from "node:fs";
+import { getTableColumns, getTableName } from "drizzle-orm";
+import { readMigrationFiles } from "drizzle-orm/migrator";
+import type { MySql2Database } from "drizzle-orm/mysql2";
 import path from "node:path";
+import { botProjects, discordUserCache, users } from "../drizzle/schema";
 import {
+  baselineMigrationsIfNeeded,
   DatabaseConnectionError,
   isMissingTableError,
   migrationsFolder,
@@ -11,6 +16,49 @@ import {
 } from "./db";
 
 afterEach(() => vi.unstubAllEnvs());
+
+/** The rows the app's own schema would produce in information_schema.COLUMNS. */
+function schemaColumns(): { t: string; c: string }[] {
+  return [users, botProjects, discordUserCache].flatMap(table => {
+    const name = getTableName(table);
+    return Object.values(getTableColumns(table)).map(
+      (column: { name: string }) => ({
+        t: name,
+        c: column.name,
+      })
+    );
+  });
+}
+
+/**
+ * A minimal stand-in for the drizzle handle: it records the SQL it is asked to
+ * run and answers from the supplied handlers. This keeps the baseline test
+ * offline (CI has no MySQL) while exercising the real code path.
+ */
+function fakeDb(handlers: { match: RegExp; rows: unknown[] }[]) {
+  const calls: string[] = [];
+  const db = {
+    execute: async (query: { queryChunks: unknown[] }) => {
+      const text = query.queryChunks
+        .map(chunk => {
+          if (typeof chunk === "string" || typeof chunk === "number") {
+            return String(chunk);
+          }
+          const value = (chunk as { value?: unknown }).value;
+          return Array.isArray(value) ? value.join("") : String(value ?? "");
+        })
+        .join("");
+      calls.push(text);
+      const handler = handlers.find(h => h.match.test(text));
+      return [handler?.rows ?? [], []];
+    },
+  } as unknown as MySql2Database<Record<string, never>>;
+  return { db, calls };
+}
+
+const TABLES = /information_schema\.TABLES/;
+const COLUMNS = /information_schema\.COLUMNS/;
+const INSERT = /INSERT INTO __drizzle_migrations/;
 
 describe("sanitizeDatabaseUrl", () => {
   it("removes the password while keeping the rest of the connection string", () => {
@@ -82,5 +130,37 @@ describe("isMissingTableError", () => {
     ).toBe(false);
     expect(isMissingTableError(new Error("connection lost"))).toBe(false);
     expect(isMissingTableError(undefined)).toBe(false);
+  });
+});
+
+describe("baselineMigrationsIfNeeded", () => {
+  it("adopts the latest committed migration for a full schema with no history", async () => {
+    const { db, calls } = fakeDb([
+      { match: TABLES, rows: [] },
+      { match: COLUMNS, rows: schemaColumns() },
+      { match: INSERT, rows: [] },
+    ]);
+    await expect(baselineMigrationsIfNeeded(db)).resolves.toBe(true);
+    const latest = readMigrationFiles({ migrationsFolder: migrationsFolder() });
+    const last = latest[latest.length - 1];
+    const inserted = calls.find(call => INSERT.test(call))!;
+    expect(inserted).toContain(String(last.folderMillis));
+    expect(inserted).toContain(last.hash);
+  });
+
+  it("does nothing when migration history already exists", async () => {
+    const { db, calls } = fakeDb([{ match: TABLES, rows: [{ "1": 1 }] }]);
+    await expect(baselineMigrationsIfNeeded(db)).resolves.toBe(false);
+    expect(calls.some(call => INSERT.test(call))).toBe(false);
+  });
+
+  it("does nothing when the schema is incomplete", async () => {
+    const partial = schemaColumns().filter(row => row.c !== "openId");
+    const { db, calls } = fakeDb([
+      { match: TABLES, rows: [] },
+      { match: COLUMNS, rows: partial },
+    ]);
+    await expect(baselineMigrationsIfNeeded(db)).resolves.toBe(false);
+    expect(calls.some(call => INSERT.test(call))).toBe(false);
   });
 });
