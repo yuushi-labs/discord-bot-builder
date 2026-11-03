@@ -202,9 +202,12 @@ async function connect(): Promise<Db> {
         error instanceof Error ? error.message : error
       );
       throw new DatabaseConnectionError(
-        "Could not apply database migrations. Check that DATABASE_URL points at the " +
-          "right database and the user can create tables, then run `pnpm run db:push` " +
-          "manually if the problem persists.",
+        "Could not apply database migrations. If this database already had tables " +
+          "from an older setup, its schema may not match the migrations (for " +
+          "example a missing UNIQUE index); compare them and reconcile before " +
+          "retrying. Otherwise check that DATABASE_URL points at the right " +
+          "database and that the user can create tables, then run `pnpm run " +
+          "db:push` manually.",
         { cause: error }
       );
     }
@@ -215,34 +218,52 @@ async function connect(): Promise<Db> {
   return _db;
 }
 
-interface RequiredTable {
-  table: string;
-  columns: string[];
+interface RequiredColumn {
+  name: string;
+  unique: boolean;
 }
 
-/** Every table and column the application needs, derived from the schema. */
+interface RequiredTable {
+  table: string;
+  columns: RequiredColumn[];
+}
+
+/** Every table, column and unique constraint the application needs. */
 function requiredSchema(): RequiredTable[] {
   return [users, botProjects, discordUserCache].map(table => ({
     table: getTableName(table),
-    columns: Object.values(getTableColumns(table)).map(
-      (column: { name: string }) => column.name
-    ),
+    columns: Object.values(getTableColumns(table)).map(column => {
+      const { name, isUnique, primary } = column as unknown as {
+        name: string;
+        isUnique?: boolean;
+        primary?: boolean;
+      };
+      return { name, unique: Boolean(isUnique || primary) };
+    }),
   }));
 }
 
 /**
- * Verify that every table and column the application queries actually exists, so
- * callers can tell "connected" from "ready". A partial schema (for example an old
- * `users` table without `openId`) is reported as not ready.
+ * Verify that every table, column and unique constraint the application relies on
+ * actually exists, so callers can tell "connected" from "ready". A partial schema
+ * (an old `users` table without `openId`, or one missing the unique index) is
+ * reported as not ready.
  */
 async function schemaExists(db: Db): Promise<boolean> {
-  let rows: { t: string; c: string }[];
+  const required = requiredSchema();
+  let columns: { t: string; c: string }[];
+  let uniqueIndexes: { t: string; c: string }[];
   try {
     // mysql2 returns a [rows, fields] tuple from execute().
-    [rows] = (await db.execute(
+    [columns] = (await db.execute(
       sql`SELECT TABLE_NAME AS t, COLUMN_NAME AS c
           FROM information_schema.COLUMNS
           WHERE TABLE_SCHEMA = DATABASE()`
+    )) as unknown as [{ t: string; c: string }[], unknown];
+    [uniqueIndexes] = (await db.execute(
+      sql`SELECT TABLE_NAME AS t, COLUMN_NAME AS c
+          FROM information_schema.STATISTICS
+          WHERE TABLE_SCHEMA = DATABASE() AND NON_UNIQUE = 0`
     )) as unknown as [{ t: string; c: string }[], unknown];
   } catch (error) {
     // A missing information_schema row is a missing schema; anything else (lost
@@ -252,14 +273,21 @@ async function schemaExists(db: Db): Promise<boolean> {
   }
 
   const present = new Map<string, Set<string>>();
-  for (const { t, c } of rows) {
-    const columns = present.get(t) ?? new Set<string>();
-    columns.add(c);
-    present.set(t, columns);
+  for (const { t, c } of columns) {
+    const found = present.get(t) ?? new Set<string>();
+    found.add(c);
+    present.set(t, found);
   }
-  return requiredSchema().every(({ table, columns }) => {
+  const unique = new Set(uniqueIndexes.map(({ t, c }) => `${t}\u0000${c}`));
+
+  return required.every(({ table, columns: needed }) => {
     const found = present.get(table);
-    return !!found && columns.every(column => found.has(column));
+    if (!found) return false;
+    return needed.every(
+      column =>
+        found.has(column.name) &&
+        (!column.unique || unique.has(`${table}\u0000${column.name}`))
+    );
   });
 }
 

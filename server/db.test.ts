@@ -30,6 +30,18 @@ function schemaColumns(): { t: string; c: string }[] {
   });
 }
 
+/** The NON_UNIQUE = 0 rows for the unique/primary columns in the schema. */
+function schemaUniqueIndexes(): { t: string; c: string }[] {
+  return [users, botProjects, discordUserCache].flatMap(table => {
+    const name = getTableName(table);
+    return Object.values(getTableColumns(table))
+      .filter((column: { isUnique?: boolean; primary?: boolean }) =>
+        Boolean(column.isUnique || column.primary)
+      )
+      .map((column: { name: string }) => ({ t: name, c: column.name }));
+  });
+}
+
 /**
  * A minimal stand-in for the drizzle handle: it records the SQL it is asked to
  * run and answers from the supplied handlers. This keeps the baseline test
@@ -65,8 +77,15 @@ function fakeDb(
 
 const HISTORY = /SELECT 1 FROM __drizzle_migrations/;
 const COLUMNS = /information_schema\.COLUMNS/;
+const STATISTICS = /information_schema\.STATISTICS/;
 const INSERT = /INSERT INTO __drizzle_migrations/;
 const MISSING = { cause: { code: "ER_NO_SUCH_TABLE" } };
+
+/** A full, valid schema as information_schema would report it. */
+const fullSchema = [
+  { match: COLUMNS, rows: schemaColumns() },
+  { match: STATISTICS, rows: schemaUniqueIndexes() },
+];
 
 describe("sanitizeDatabaseUrl", () => {
   it("removes the password while keeping the rest of the connection string", () => {
@@ -145,7 +164,7 @@ describe("baselineMigrationsIfNeeded", () => {
   it("adopts the latest committed migration when the history table is absent", async () => {
     const { db, calls } = fakeDb([
       { match: HISTORY, error: MISSING },
-      { match: COLUMNS, rows: schemaColumns() },
+      ...fullSchema,
       { match: INSERT, rows: [] },
     ]);
     await expect(baselineMigrationsIfNeeded(db)).resolves.toBe(true);
@@ -159,7 +178,7 @@ describe("baselineMigrationsIfNeeded", () => {
   it("baselines an empty history table left by an interrupted first migration", async () => {
     const { db, calls } = fakeDb([
       { match: HISTORY, rows: [] },
-      { match: COLUMNS, rows: schemaColumns() },
+      ...fullSchema,
       { match: INSERT, rows: [] },
     ]);
     await expect(baselineMigrationsIfNeeded(db)).resolves.toBe(true);
@@ -177,6 +196,20 @@ describe("baselineMigrationsIfNeeded", () => {
     const { db, calls } = fakeDb([
       { match: HISTORY, error: MISSING },
       { match: COLUMNS, rows: partial },
+      { match: STATISTICS, rows: schemaUniqueIndexes() },
+    ]);
+    await expect(baselineMigrationsIfNeeded(db)).resolves.toBe(false);
+    expect(calls.some(call => INSERT.test(call))).toBe(false);
+  });
+
+  it("does nothing when a unique constraint is missing", async () => {
+    const withoutUnique = schemaUniqueIndexes().filter(
+      row => !(row.t === "users" && row.c === "openId")
+    );
+    const { db, calls } = fakeDb([
+      { match: HISTORY, error: MISSING },
+      { match: COLUMNS, rows: schemaColumns() },
+      { match: STATISTICS, rows: withoutUnique },
     ]);
     await expect(baselineMigrationsIfNeeded(db)).resolves.toBe(false);
     expect(calls.some(call => INSERT.test(call))).toBe(false);
