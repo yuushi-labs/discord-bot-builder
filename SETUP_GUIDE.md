@@ -76,10 +76,13 @@ pnpm run db:setup
 # 既定の root 接続（mysql://root@localhost:3306、パスワードなし）が
 # ローカルの MySQL 設定と一致しない場合は ADMIN_DATABASE_URL を指定します。
 # root にパスワードがある場合もここで指定してください。
+ADMIN_DATABASE_URL=mysql://root:YOUR_ROOT_PASSWORD@localhost:3306 pnpm run db:setup
+
+# 管理者ユーザーが root 以外の場合はそのユーザー名に置き換えます
 ADMIN_DATABASE_URL=mysql://admin:YOUR_ADMIN_PASSWORD@localhost:3306 pnpm run db:setup
 
-# アプリが接続するクライアントホストを明示したい場合（既定は localhost、
-# リモート DB では %）
+# アプリが接続するクライアントホストを明示したい場合（既定は localhost と
+# 127.0.0.1、リモート DB では %）
 DB_ACCOUNT_HOST=% pnpm run db:setup
 ```
 

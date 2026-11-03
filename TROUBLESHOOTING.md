@@ -294,11 +294,17 @@ mysql -u root -p
 # ユーザーを確認
 SELECT User, Host FROM mysql.user;
 
-# ユーザーを作成（存在する場合はパスワードを DATABASE_URL と一致させる）
-# パスワードは .env の DATABASE_URL と完全に一致させること
+# ローカル接続の例（パスワードは .env の DATABASE_URL と完全に一致させること）
+# 既存ユーザーでもパスワードを直せるよう CREATE の後に ALTER を実行する
 CREATE USER IF NOT EXISTS 'bot_user'@'localhost' IDENTIFIED BY 'secure_password';
 ALTER USER 'bot_user'@'localhost' IDENTIFIED BY 'secure_password';
 GRANT ALL PRIVILEGES ON discord_bot_builder.* TO 'bot_user'@'localhost';
+
+# リモート DB（DB_ACCOUNT_HOST=% 相当）の場合はホストを % にする
+CREATE USER IF NOT EXISTS 'bot_user'@'%' IDENTIFIED BY 'secure_password';
+ALTER USER 'bot_user'@'%' IDENTIFIED BY 'secure_password';
+GRANT ALL PRIVILEGES ON discord_bot_builder.* TO 'bot_user'@'%';
+
 FLUSH PRIVILEGES;
 ```
 

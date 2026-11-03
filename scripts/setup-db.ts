@@ -32,23 +32,29 @@ export function parseDatabaseUrl(url: string) {
   const port = parsed.port || "3306";
   if (!database) throw new Error("DATABASE_URL must include a database name");
   if (!user) throw new Error("DATABASE_URL must include a user name");
+  if (!password) {
+    throw new Error(
+      "DATABASE_URL must include a password. Refusing to create a passwordless MySQL account."
+    );
+  }
   return { host, port, user, password, database };
 }
 
 /**
  * MySQL matches an account's host against the connecting client, not the server
- * address in DATABASE_URL. Local connections match "localhost"; remote clients
- * come from an address the script cannot know, so "any host" is the only
- * workable default. Override with DB_ACCOUNT_HOST when the client host is known.
+ * address in DATABASE_URL. Loopback clients can present as either "localhost" or
+ * "127.0.0.1" (for example when skip_name_resolve is enabled), so provision both.
+ * Remote clients come from an address the script cannot know, so "any host" is
+ * the only workable default. Override with DB_ACCOUNT_HOST when it is known.
  */
-export function resolveAccountHost(
+export function resolveAccountHosts(
   serverHost: string,
   override?: string
-): string {
-  if (override) return override;
+): string[] {
+  if (override) return [override];
   return serverHost === "localhost" || serverHost === "127.0.0.1"
-    ? "localhost"
-    : "%";
+    ? ["localhost", "127.0.0.1"]
+    : ["%"];
 }
 
 export async function setupDatabase(
@@ -62,7 +68,7 @@ export async function setupDatabase(
       `Unsafe database name "${target.database}"; use only letters, digits and underscores`
     );
   }
-  const grantHost = resolveAccountHost(target.host, accountHost);
+  const grantHosts = resolveAccountHosts(target.host, accountHost);
 
   const connection = await mysql.createConnection(adminUrl);
   try {
@@ -70,23 +76,25 @@ export async function setupDatabase(
       `CREATE DATABASE IF NOT EXISTS ${mysql.escapeId(target.database)} ` +
         "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
     );
-    // Scope the account to the client host it connects from, not the server address.
-    const account = `${mysql.escape(target.user)}@${mysql.escape(grantHost)}`;
-    await connection.query(
-      `CREATE USER IF NOT EXISTS ${account} IDENTIFIED BY ${mysql.escape(target.password)}`
-    );
-    await connection.query(
-      `ALTER USER ${account} IDENTIFIED BY ${mysql.escape(target.password)}`
-    );
-    await connection.query(
-      `GRANT ALL PRIVILEGES ON ${mysql.escapeId(target.database)}.* TO ${account}`
-    );
+    // Scope each account to a client host the application may connect from.
+    for (const grantHost of grantHosts) {
+      const account = `${mysql.escape(target.user)}@${mysql.escape(grantHost)}`;
+      await connection.query(
+        `CREATE USER IF NOT EXISTS ${account} IDENTIFIED BY ${mysql.escape(target.password)}`
+      );
+      await connection.query(
+        `ALTER USER ${account} IDENTIFIED BY ${mysql.escape(target.password)}`
+      );
+      await connection.query(
+        `GRANT ALL PRIVILEGES ON ${mysql.escapeId(target.database)}.* TO ${account}`
+      );
+    }
     await connection.query("FLUSH PRIVILEGES");
   } finally {
     await connection.end();
   }
 
-  return { ...target, grantHost };
+  return { ...target, grantHosts };
 }
 
 async function main() {
@@ -100,8 +108,8 @@ async function main() {
     process.env.DB_ACCOUNT_HOST
   );
   console.log(
-    `Prepared database "${target.database}" and user "${target.user}"@${target.grantHost}. ` +
-      "Now run: pnpm run db:push"
+    `Prepared database "${target.database}" and user "${target.user}" for hosts: ` +
+      `${target.grantHosts.join(", ")}. Now run: pnpm run db:push`
   );
 }
 

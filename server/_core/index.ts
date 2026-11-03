@@ -76,12 +76,16 @@ async function startServer() {
   }
 
   const shutdown = async () => {
-    // Keep-alive or HMR sockets can stall server.close(), so force exit as a fallback.
-    const forceExit = setTimeout(() => process.exit(1), 5000);
+    // Keep-alive or HMR sockets can stall server.close(). Close idle ones now and
+    // force-exit after a grace period, so in-flight requests are not cut off.
+    const forceExit = setTimeout(() => {
+      server.closeAllConnections?.();
+      process.exit(1);
+    }, 5000);
     forceExit.unref();
     await closeDb().catch(() => {});
     server.close(() => process.exit(0));
-    server.closeAllConnections?.();
+    server.closeIdleConnections?.();
   };
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);

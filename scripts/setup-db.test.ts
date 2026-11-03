@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   parseDatabaseUrl,
-  resolveAccountHost,
+  resolveAccountHosts,
   setupDatabase,
 } from "./setup-db";
 
@@ -40,6 +40,12 @@ describe("parseDatabaseUrl", () => {
     ).toThrow(/user name/);
   });
 
+  it("rejects a URL without a password", () => {
+    expect(() =>
+      parseDatabaseUrl("mysql://bot_user@localhost:3306/discord_bot_builder")
+    ).toThrow(/password/);
+  });
+
   it("does not leak credentials when the URL is invalid", () => {
     const secret = "mysql://bot_user:hunter2@localhost:notaport/db";
     let message = "";
@@ -53,18 +59,24 @@ describe("parseDatabaseUrl", () => {
   });
 });
 
-describe("resolveAccountHost", () => {
-  it("uses localhost for local servers", () => {
-    expect(resolveAccountHost("localhost")).toBe("localhost");
-    expect(resolveAccountHost("127.0.0.1")).toBe("localhost");
+describe("resolveAccountHosts", () => {
+  it("provisions both loopback forms for local servers", () => {
+    expect(resolveAccountHosts("localhost")).toEqual([
+      "localhost",
+      "127.0.0.1",
+    ]);
+    expect(resolveAccountHosts("127.0.0.1")).toEqual([
+      "localhost",
+      "127.0.0.1",
+    ]);
   });
 
   it("falls back to any host for remote servers", () => {
-    expect(resolveAccountHost("db.example")).toBe("%");
+    expect(resolveAccountHosts("db.example")).toEqual(["%"]);
   });
 
   it("honours an explicit override", () => {
-    expect(resolveAccountHost("db.example", "10.0.0.5")).toBe("10.0.0.5");
+    expect(resolveAccountHosts("db.example", "10.0.0.5")).toEqual(["10.0.0.5"]);
   });
 });
 
