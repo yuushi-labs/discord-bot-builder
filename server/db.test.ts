@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   DatabaseConnectionError,
+  isMissingTableError,
   migrationsFolder,
   pingDatabase,
   sanitizeDatabaseUrl,
@@ -65,5 +66,21 @@ describe("shouldAutoMigrate", () => {
   it("can be disabled when the schema is managed elsewhere", () => {
     vi.stubEnv("DB_AUTO_MIGRATE", "false");
     expect(shouldAutoMigrate()).toBe(false);
+  });
+});
+
+describe("isMissingTableError", () => {
+  it("recognises the server's missing-table error code", () => {
+    expect(isMissingTableError({ cause: { code: "ER_NO_SUCH_TABLE" } })).toBe(
+      true
+    );
+  });
+
+  it("does not treat other failures as a missing table", () => {
+    expect(
+      isMissingTableError({ cause: { code: "ER_ACCESS_DENIED_ERROR" } })
+    ).toBe(false);
+    expect(isMissingTableError(new Error("connection lost"))).toBe(false);
+    expect(isMissingTableError(undefined)).toBe(false);
   });
 });

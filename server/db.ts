@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, getTableColumns, getTableName, sql } from "drizzle-orm";
 import { drizzle, type MySql2Database } from "drizzle-orm/mysql2";
 import { migrate } from "drizzle-orm/mysql2/migrator";
 import mysql from "mysql2/promise";
@@ -82,6 +82,41 @@ export function shouldAutoMigrate(): boolean {
   return process.env.DB_AUTO_MIGRATE !== "false";
 }
 
+/** True only for a genuine "table does not exist" error from the server. */
+export function isMissingTableError(error: unknown): boolean {
+  const code = (error as { cause?: { code?: string } })?.cause?.code;
+  return code === "ER_NO_SUCH_TABLE";
+}
+
+/**
+ * Drizzle's MySQL migrator reads the applied-migration list and then runs the
+ * pending DDL without a cross-process lock, so two instances starting together
+ * can run the same CREATE TABLE. A database-wide advisory lock (which is
+ * released automatically when the connection closes) keeps that serialized.
+ */
+async function runMigrations(db: Db, pool: mysql.Pool): Promise<void> {
+  const lockName = "discord_bot_builder:migrations";
+  const connection = await pool.getConnection();
+  try {
+    const [[acquired]] = (await connection.query(
+      "SELECT GET_LOCK(?, 60) AS acquired",
+      [lockName]
+    )) as unknown as [{ acquired: number | null }[]];
+    if (!acquired?.acquired) {
+      throw new Error(
+        "Timed out waiting for the database migration lock; another instance is " +
+          "probably migrating. Retry the start, or set DB_AUTO_MIGRATE=false."
+      );
+    }
+    await migrate(db, { migrationsFolder: migrationsFolder() });
+  } finally {
+    await connection
+      .query("SELECT RELEASE_LOCK(?)", [lockName])
+      .catch(() => {});
+    connection.release();
+  }
+}
+
 async function connect(): Promise<Db> {
   const url = process.env.DATABASE_URL;
   if (!url) throw missingUrlError();
@@ -111,7 +146,7 @@ async function connect(): Promise<Db> {
   // "Table '<db>.users' doesn't exist".
   if (shouldAutoMigrate()) {
     try {
-      await migrate(db, { migrationsFolder: migrationsFolder() });
+      await runMigrations(db, pool);
     } catch (error) {
       await pool.end().catch(() => {});
       console.error(
@@ -132,15 +167,53 @@ async function connect(): Promise<Db> {
   return _db;
 }
 
-/** True when the core table exists, so callers can tell "connected" from "ready". */
+interface RequiredTable {
+  table: string;
+  columns: string[];
+}
+
+/** Every table and column the application needs, derived from the schema. */
+function requiredSchema(): RequiredTable[] {
+  return [users, botProjects, discordUserCache].map(table => ({
+    table: getTableName(table),
+    columns: Object.values(getTableColumns(table)).map(
+      (column: { name: string }) => column.name
+    ),
+  }));
+}
+
+/**
+ * Verify that every table and column the application queries actually exists, so
+ * callers can tell "connected" from "ready". A partial schema (for example an old
+ * `users` table without `openId`) is reported as not ready.
+ */
 export async function hasSchema(): Promise<boolean> {
   const db = await getDb();
+  let rows: { t: string; c: string }[];
   try {
-    await db.select({ id: users.id }).from(users).limit(1);
-    return true;
-  } catch {
-    return false;
+    // mysql2 returns a [rows, fields] tuple from execute().
+    [rows] = (await db.execute(
+      sql`SELECT TABLE_NAME AS t, COLUMN_NAME AS c
+          FROM information_schema.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE()`
+    )) as unknown as [{ t: string; c: string }[], unknown];
+  } catch (error) {
+    // A missing information_schema row is a missing schema; anything else (lost
+    // connection, denied SELECT) is a real error and should not be masked.
+    if (isMissingTableError(error)) return false;
+    throw error;
   }
+
+  const present = new Map<string, Set<string>>();
+  for (const { t, c } of rows) {
+    const columns = present.get(t) ?? new Set<string>();
+    columns.add(c);
+    present.set(t, columns);
+  }
+  return requiredSchema().every(({ table, columns }) => {
+    const found = present.get(table);
+    return !!found && columns.every(column => found.has(column));
+  });
 }
 
 // Create the pool lazily on first use and reuse it afterwards.
