@@ -323,26 +323,35 @@ FLUSH PRIVILEGES;
 ```
 
 `.env` の `DATABASE_URL` も同じ値になっていることを確認してください。
-`pnpm run db:check` で接続だけを確認できます。
+`pnpm run db:check` で接続とスキーマの状態を確認できます（テーブルが無い場合は
+`pnpm run db:push` を実行してください）。
 
-### Q12: マイグレーションエラー
+### Q12: テーブルが存在しない / マイグレーションエラー
 
 **エラーメッセージ:**
+```
+Table 'discord_bot_builder.users' doesn't exist
+```
+または
 ```
 Error: Migration failed
 ```
 
-**原因:** データベーススキーマが正しく初期化されていない
+**原因:** データベースとユーザーは作成できたが、テーブル（スキーマ）がまだ
+作成されていない。`db:setup` はデータベースとユーザーだけを作成します。
 
 **解決方法:**
 ```bash
-# マイグレーションを実行
-pnpm drizzle-kit generate
-pnpm drizzle-kit migrate
+# テーブルを作成（マイグレーション実行）
+pnpm run db:push
 
-# または手動で SQL を実行
-mysql -u bot_user -p discord_bot_builder < drizzle/migrations/0001.sql
+# 作成されたか確認（"schema ready" と表示されれば OK）
+pnpm run db:check
 ```
+
+`db:push` は `drizzle/` にあるマイグレーションを適用します。通常はサーバーを
+起動するだけで自動作成されるため、この操作は必須ではありません。別の場所で
+スキーマを管理している場合は `DB_AUTO_MIGRATE=false` を設定してください。
 
 ---
 

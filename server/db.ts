@@ -1,9 +1,21 @@
 import { and, eq } from "drizzle-orm";
 import { drizzle, type MySql2Database } from "drizzle-orm/mysql2";
+import { migrate } from "drizzle-orm/mysql2/migrator";
 import mysql from "mysql2/promise";
-import { InsertUser, users, botProjects, discordUserCache, BotProject, DiscordUserCache, InsertBotProject, InsertDiscordUserCache } from "../drizzle/schema";
-import { ENV } from './_core/env';
-import { encryptToken, decryptToken } from './token-crypto';
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  InsertUser,
+  users,
+  botProjects,
+  discordUserCache,
+  BotProject,
+  DiscordUserCache,
+  InsertBotProject,
+  InsertDiscordUserCache,
+} from "../drizzle/schema";
+import { ENV } from "./_core/env";
+import { encryptToken, decryptToken } from "./token-crypto";
 
 type Db = MySql2Database<Record<string, never>>;
 
@@ -37,13 +49,37 @@ function missingUrlError(): DatabaseConnectionError {
   );
 }
 
-function connectionFailedError(url: string, cause: unknown): DatabaseConnectionError {
+function connectionFailedError(
+  url: string,
+  cause: unknown
+): DatabaseConnectionError {
   return new DatabaseConnectionError(
     `Could not connect to MySQL at ${sanitizeDatabaseUrl(url)}. ` +
       "Check DATABASE_URL and make sure the user exists with the expected password and privileges " +
       "(see SETUP_GUIDE.md, or create the user with `pnpm run db:setup`).",
     { cause }
   );
+}
+
+/**
+ * Apply the Drizzle migrations shipped in the repository. The migrations folder
+ * sits next to package.json, which resolves relative to this module both when run
+ * from source (server/db.ts) and from the built bundle (dist/index.js).
+ */
+export function migrationsFolder(): string {
+  return path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../drizzle"
+  );
+}
+
+/**
+ * Auto-migration is on by default so a fresh clone works after `db:setup`.
+ * Set DB_AUTO_MIGRATE=false when the schema is managed elsewhere (e.g. several
+ * instances starting at once, or a migration step in the deploy pipeline).
+ */
+export function shouldAutoMigrate(): boolean {
+  return process.env.DB_AUTO_MIGRATE !== "false";
 }
 
 async function connect(): Promise<Db> {
@@ -55,10 +91,12 @@ async function connect(): Promise<Db> {
     waitForConnections: true,
     connectionLimit: 10,
   });
+  let db: Db;
   try {
     // mysql2 pools connect lazily, so probe once to surface auth/config errors here.
     const connection = await pool.getConnection();
     connection.release();
+    db = drizzle(pool);
   } catch (error) {
     await pool.end().catch(() => {});
     console.error(
@@ -68,9 +106,41 @@ async function connect(): Promise<Db> {
     throw connectionFailedError(url, error);
   }
 
+  // Apply pending migrations so a fresh database gets its tables on first run.
+  // Without this, the connection succeeds but the first query fails with
+  // "Table '<db>.users' doesn't exist".
+  if (shouldAutoMigrate()) {
+    try {
+      await migrate(db, { migrationsFolder: migrationsFolder() });
+    } catch (error) {
+      await pool.end().catch(() => {});
+      console.error(
+        "[Database] Migration failed:",
+        error instanceof Error ? error.message : error
+      );
+      throw new DatabaseConnectionError(
+        "Could not apply database migrations. Check that DATABASE_URL points at the " +
+          "right database and the user can create tables, then run `pnpm run db:push` " +
+          "manually if the problem persists.",
+        { cause: error }
+      );
+    }
+  }
+
   _pool = pool;
-  _db = drizzle(pool);
+  _db = db;
   return _db;
+}
+
+/** True when the core table exists, so callers can tell "connected" from "ready". */
+export async function hasSchema(): Promise<boolean> {
+  const db = await getDb();
+  try {
+    await db.select({ id: users.id }).from(users).limit(1);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // Create the pool lazily on first use and reuse it afterwards.
@@ -132,8 +202,8 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       values.role = user.role;
       updateSet.role = user.role;
     } else if (user.openId === ENV.ownerOpenId) {
-      values.role = 'admin';
-      updateSet.role = 'admin';
+      values.role = "admin";
+      updateSet.role = "admin";
     }
 
     if (!values.lastSignedIn) {
@@ -156,7 +226,11 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 export async function getUserByOpenId(openId: string) {
   const db = await getDb();
 
-  const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+  const result = await db
+    .select()
+    .from(users)
+    .where(eq(users.openId, openId))
+    .limit(1);
 
   return result.length > 0 ? result[0] : undefined;
 }
@@ -164,19 +238,35 @@ export async function getUserByOpenId(openId: string) {
 // Bot Projects
 export async function getBotProjectsByUserId(userId: number) {
   const db = await getDb();
-  return db.select({ id: botProjects.id, userId: botProjects.userId, name: botProjects.name,
-    blocklyWorkspace: botProjects.blocklyWorkspace, createdAt: botProjects.createdAt, updatedAt: botProjects.updatedAt,
-  }).from(botProjects).where(eq(botProjects.userId, userId));
+  return db
+    .select({
+      id: botProjects.id,
+      userId: botProjects.userId,
+      name: botProjects.name,
+      blocklyWorkspace: botProjects.blocklyWorkspace,
+      createdAt: botProjects.createdAt,
+      updatedAt: botProjects.updatedAt,
+    })
+    .from(botProjects)
+    .where(eq(botProjects.userId, userId));
 }
 
-export async function getBotProjectById(projectId: number, userId: number): Promise<BotProject | undefined> {
+export async function getBotProjectById(
+  projectId: number,
+  userId: number
+): Promise<BotProject | undefined> {
   const db = await getDb();
   const result = await db
     .select()
     .from(botProjects)
     .where(and(eq(botProjects.id, projectId), eq(botProjects.userId, userId)))
     .limit(1);
-  return result.length > 0 ? { ...result[0], discordToken: decryptToken(result[0].discordToken, userId, "bot") } : undefined;
+  return result.length > 0
+    ? {
+        ...result[0],
+        discordToken: decryptToken(result[0].discordToken, userId, "bot"),
+      }
+    : undefined;
 }
 
 export async function createBotProject(
@@ -213,7 +303,9 @@ export async function deleteBotProject(projectId: number, userId: number) {
 }
 
 // Discord User Cache
-export async function getDiscordUserCache(userId: number): Promise<DiscordUserCache | undefined> {
+export async function getDiscordUserCache(
+  userId: number
+): Promise<DiscordUserCache | undefined> {
   const db = await getDb();
   const result = await db
     .select()
@@ -221,7 +313,13 @@ export async function getDiscordUserCache(userId: number): Promise<DiscordUserCa
     .where(eq(discordUserCache.userId, userId))
     .limit(1);
   if (!result.length) return undefined;
-  return { ...result[0], accessToken: result[0].accessToken === null ? null : decryptToken(result[0].accessToken, userId, "oauth") };
+  return {
+    ...result[0],
+    accessToken:
+      result[0].accessToken === null
+        ? null
+        : decryptToken(result[0].accessToken, userId, "oauth"),
+  };
 }
 
 export async function upsertDiscordUserCache(
@@ -229,7 +327,13 @@ export async function upsertDiscordUserCache(
   discordData: Omit<InsertDiscordUserCache, "userId">
 ) {
   const db = await getDb();
-  const encryptedData = { ...discordData, accessToken: discordData.accessToken == null ? discordData.accessToken : encryptToken(discordData.accessToken, userId, "oauth") };
+  const encryptedData = {
+    ...discordData,
+    accessToken:
+      discordData.accessToken == null
+        ? discordData.accessToken
+        : encryptToken(discordData.accessToken, userId, "oauth"),
+  };
   return db
     .insert(discordUserCache)
     .values({ userId, ...encryptedData })

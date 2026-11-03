@@ -68,10 +68,11 @@ echo -e "${GREEN}✓ ポート $PORT は利用可能です${NC}"
 # MySQL 接続確認
 echo -e "${YELLOW}⚠ データベース接続を確認中...${NC}"
 if ! DB_CHECK_OUTPUT=$(timeout 10 pnpm exec tsx scripts/check-db.ts 2>&1); then
-    echo -e "${RED}✗ データベースに接続できません${NC}"
+    echo -e "${RED}✗ データベースの確認に失敗しました${NC}"
     echo "$DB_CHECK_OUTPUT"
     echo -e "${YELLOW}DATABASE_URL のユーザー名・パスワードと、MySQL ユーザーの権限を確認してください${NC}"
     echo -e "${YELLOW}ユーザーが未作成の場合は次を実行してください: pnpm run db:setup${NC}"
+    echo -e "${YELLOW}テーブルが無い場合は次を実行してください: pnpm run db:push${NC}"
     echo ""
 else
     echo -e "${GREEN}✓ データベース接続を確認しました${NC}"
