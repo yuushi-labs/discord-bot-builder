@@ -97,11 +97,19 @@ export function isMissingTableError(error: unknown): boolean {
  * baseline so only genuinely new migrations run.
  */
 export async function baselineMigrationsIfNeeded(db: Db): Promise<boolean> {
-  const [migrationRows] = (await db.execute(
-    sql`SELECT 1 FROM information_schema.TABLES
-        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '__drizzle_migrations'`
-  )) as unknown as [unknown[], unknown];
-  if (migrationRows.length > 0) return false;
+  // A present-but-empty history table counts as no history: a crash between the
+  // last DDL statement of a migration and its history insert leaves the schema
+  // complete with nothing recorded, and replaying would fail on the live tables.
+  let hasHistory = false;
+  try {
+    const [rows] = (await db.execute(
+      sql`SELECT 1 FROM __drizzle_migrations LIMIT 1`
+    )) as unknown as [unknown[], unknown];
+    hasHistory = rows.length > 0;
+  } catch (error) {
+    if (!isMissingTableError(error)) throw error;
+  }
+  if (hasHistory) return false;
   if (!(await schemaExists(db))) return false;
 
   const migrations = readMigrationFiles({

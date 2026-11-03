@@ -35,7 +35,13 @@ function schemaColumns(): { t: string; c: string }[] {
  * run and answers from the supplied handlers. This keeps the baseline test
  * offline (CI has no MySQL) while exercising the real code path.
  */
-function fakeDb(handlers: { match: RegExp; rows: unknown[] }[]) {
+function fakeDb(
+  handlers: {
+    match: RegExp;
+    rows?: unknown[];
+    error?: unknown;
+  }[]
+) {
   const calls: string[] = [];
   const db = {
     execute: async (query: { queryChunks: unknown[] }) => {
@@ -50,15 +56,17 @@ function fakeDb(handlers: { match: RegExp; rows: unknown[] }[]) {
         .join("");
       calls.push(text);
       const handler = handlers.find(h => h.match.test(text));
+      if (handler?.error) throw handler.error;
       return [handler?.rows ?? [], []];
     },
   } as unknown as MySql2Database<Record<string, never>>;
   return { db, calls };
 }
 
-const TABLES = /information_schema\.TABLES/;
+const HISTORY = /SELECT 1 FROM __drizzle_migrations/;
 const COLUMNS = /information_schema\.COLUMNS/;
 const INSERT = /INSERT INTO __drizzle_migrations/;
+const MISSING = { cause: { code: "ER_NO_SUCH_TABLE" } };
 
 describe("sanitizeDatabaseUrl", () => {
   it("removes the password while keeping the rest of the connection string", () => {
@@ -134,9 +142,9 @@ describe("isMissingTableError", () => {
 });
 
 describe("baselineMigrationsIfNeeded", () => {
-  it("adopts the latest committed migration for a full schema with no history", async () => {
+  it("adopts the latest committed migration when the history table is absent", async () => {
     const { db, calls } = fakeDb([
-      { match: TABLES, rows: [] },
+      { match: HISTORY, error: MISSING },
       { match: COLUMNS, rows: schemaColumns() },
       { match: INSERT, rows: [] },
     ]);
@@ -148,8 +156,18 @@ describe("baselineMigrationsIfNeeded", () => {
     expect(inserted).toContain(last.hash);
   });
 
-  it("does nothing when migration history already exists", async () => {
-    const { db, calls } = fakeDb([{ match: TABLES, rows: [{ "1": 1 }] }]);
+  it("baselines an empty history table left by an interrupted first migration", async () => {
+    const { db, calls } = fakeDb([
+      { match: HISTORY, rows: [] },
+      { match: COLUMNS, rows: schemaColumns() },
+      { match: INSERT, rows: [] },
+    ]);
+    await expect(baselineMigrationsIfNeeded(db)).resolves.toBe(true);
+    expect(calls.some(call => INSERT.test(call))).toBe(true);
+  });
+
+  it("does nothing when migration history already has rows", async () => {
+    const { db, calls } = fakeDb([{ match: HISTORY, rows: [{ "1": 1 }] }]);
     await expect(baselineMigrationsIfNeeded(db)).resolves.toBe(false);
     expect(calls.some(call => INSERT.test(call))).toBe(false);
   });
@@ -157,10 +175,17 @@ describe("baselineMigrationsIfNeeded", () => {
   it("does nothing when the schema is incomplete", async () => {
     const partial = schemaColumns().filter(row => row.c !== "openId");
     const { db, calls } = fakeDb([
-      { match: TABLES, rows: [] },
+      { match: HISTORY, error: MISSING },
       { match: COLUMNS, rows: partial },
     ]);
     await expect(baselineMigrationsIfNeeded(db)).resolves.toBe(false);
     expect(calls.some(call => INSERT.test(call))).toBe(false);
+  });
+
+  it("propagates errors other than a missing history table", async () => {
+    const { db } = fakeDb([
+      { match: HISTORY, error: { cause: { code: "ER_ACCESS_DENIED_ERROR" } } },
+    ]);
+    await expect(baselineMigrationsIfNeeded(db)).rejects.toBeTruthy();
   });
 });
