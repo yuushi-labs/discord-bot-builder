@@ -52,6 +52,22 @@ cp .env.example .env
 # .env ファイルを編集して必要な値を設定
 ```
 
+### データベースの準備
+
+`DATABASE_URL` のユーザー名・パスワードでデータベースとユーザーを作成し、
+テーブルを作成します。
+
+```bash
+# DATABASE_URL の内容でデータベース・ユーザー・権限を作成
+pnpm run db:setup
+
+# テーブルを作成（マイグレーション実行）
+pnpm run db:push
+
+# 接続確認（任意）
+pnpm run db:check
+```
+
 ### 起動
 
 **Linux/Mac:**

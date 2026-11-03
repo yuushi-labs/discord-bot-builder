@@ -66,8 +66,21 @@ npm install
 
 #### オプション A: ローカル MySQL
 
+最も簡単なのはセットアップスクリプトを使う方法です。`DATABASE_URL` に書いた
+ユーザー名・パスワードのままデータベースとユーザーを作成し、権限を付与します。
+
 ```bash
-# MySQL サーバーを起動
+# .env に DATABASE_URL を設定したうえで実行
+pnpm run db:setup
+
+# 管理者ユーザーが root 以外の場合は接続先を指定できます
+ADMIN_DATABASE_URL=mysql://admin:password@localhost:3306 pnpm run db:setup
+```
+
+手動で作成する場合は次のとおりです。`DATABASE_URL` の値と一致させてください。
+
+```bash
+# MySQL サーバーに接続
 mysql -u root -p
 
 # データベースを作成
@@ -76,6 +89,9 @@ CREATE USER 'bot_user'@'localhost' IDENTIFIED BY 'secure_password';
 GRANT ALL PRIVILEGES ON discord_bot_builder.* TO 'bot_user'@'localhost';
 FLUSH PRIVILEGES;
 ```
+
+> **メモ:** パスワードは `.env` の `DATABASE_URL` に書いた値と完全に一致させてください。
+> 一致していないと `Access denied for user 'bot_user'@'localhost'` でログインに失敗します。
 
 #### オプション B: クラウド DB（推奨）
 
