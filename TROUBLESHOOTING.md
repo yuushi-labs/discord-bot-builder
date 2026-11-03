@@ -304,6 +304,10 @@ CREATE USER IF NOT EXISTS 'bot_user'@'127.0.0.1' IDENTIFIED BY 'secure_password'
 ALTER USER 'bot_user'@'127.0.0.1' IDENTIFIED BY 'secure_password';
 GRANT ALL PRIVILEGES ON discord_bot_builder.* TO 'bot_user'@'127.0.0.1';
 
+CREATE USER IF NOT EXISTS 'bot_user'@'::1' IDENTIFIED BY 'secure_password';
+ALTER USER 'bot_user'@'::1' IDENTIFIED BY 'secure_password';
+GRANT ALL PRIVILEGES ON discord_bot_builder.* TO 'bot_user'@'::1';
+
 FLUSH PRIVILEGES;
 ```
 
