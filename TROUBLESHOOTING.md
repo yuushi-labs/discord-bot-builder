@@ -250,12 +250,17 @@ net start MySQL80
 
 **Docker を使用:**
 ```bash
-# MySQL コンテナを起動
+# MySQL コンテナを起動（DATABASE_URL のユーザー/パスワードと合わせること）
 docker run -d -p 3306:3306 \
   -e MYSQL_ROOT_PASSWORD=root \
   -e MYSQL_DATABASE=discord_bot_builder \
+  -e MYSQL_USER=bot_user \
+  -e MYSQL_PASSWORD=secure_password \
   mysql:8.0
 ```
+
+コンテナの `MYSQL_USER` / `MYSQL_PASSWORD` は `.env` の `DATABASE_URL` と一致させてください。
+既存の MySQL を使う場合も、`pnpm run db:setup` でユーザーと権限をまとめて作成できます。
 
 ### Q11: データベース認証エラー
 
@@ -263,10 +268,25 @@ docker run -d -p 3306:3306 \
 ```
 Error: Access denied for user 'bot_user'@'localhost'
 ```
+または起動ログ / ログイン時の 500 応答:
+```
+[Database] Could not connect to MySQL at mysql://bot_user:***@localhost:3306/discord_bot_builder
+```
 
-**原因:** ユーザー名またはパスワードが間違っている
+**原因:** `.env` の `DATABASE_URL` に書いたユーザー名またはパスワードが MySQL 側と一致していない、
+もしくはユーザー・権限が作成されていない
 
 **解決方法:**
+
+最も簡単なのは、`DATABASE_URL` の値のままユーザーと権限を作成するスクリプトです。
+
+```bash
+# DATABASE_URL のユーザー名・パスワードでデータベースとユーザーを作成
+pnpm run db:setup
+```
+
+手動で直す場合は次のとおりです。
+
 ```bash
 # MySQL にログイン
 mysql -u root -p
@@ -274,14 +294,36 @@ mysql -u root -p
 # ユーザーを確認
 SELECT User, Host FROM mysql.user;
 
-# ユーザーを作成または再作成
-CREATE USER 'bot_user'@'localhost' IDENTIFIED BY 'secure_password';
+# ローカル接続の例（パスワードは .env の DATABASE_URL と完全に一致させること）
+# 既存ユーザーでもパスワードを直せるよう CREATE の後に ALTER を実行する
+CREATE USER IF NOT EXISTS 'bot_user'@'localhost' IDENTIFIED BY 'secure_password';
+ALTER USER 'bot_user'@'localhost' IDENTIFIED BY 'secure_password';
 GRANT ALL PRIVILEGES ON discord_bot_builder.* TO 'bot_user'@'localhost';
-FLUSH PRIVILEGES;
 
-# .env ファイルを更新
-DATABASE_URL=mysql://bot_user:secure_password@localhost:3306/discord_bot_builder
+CREATE USER IF NOT EXISTS 'bot_user'@'127.0.0.1' IDENTIFIED BY 'secure_password';
+ALTER USER 'bot_user'@'127.0.0.1' IDENTIFIED BY 'secure_password';
+GRANT ALL PRIVILEGES ON discord_bot_builder.* TO 'bot_user'@'127.0.0.1';
+
+CREATE USER IF NOT EXISTS 'bot_user'@'::1' IDENTIFIED BY 'secure_password';
+ALTER USER 'bot_user'@'::1' IDENTIFIED BY 'secure_password';
+GRANT ALL PRIVILEGES ON discord_bot_builder.* TO 'bot_user'@'::1';
+
+FLUSH PRIVILEGES;
 ```
+
+ホスト部分は、`DB_ACCOUNT_HOST` を設定している場合はその値に置き換えてください。
+リモート DB で `DB_ACCOUNT_HOST=%` を使っている場合のみ、次を実行します。
+`%` はどのホストからの接続も許可するため、ローカル DB では実行しないでください。
+
+```sql
+CREATE USER IF NOT EXISTS 'bot_user'@'%' IDENTIFIED BY 'secure_password';
+ALTER USER 'bot_user'@'%' IDENTIFIED BY 'secure_password';
+GRANT ALL PRIVILEGES ON discord_bot_builder.* TO 'bot_user'@'%';
+FLUSH PRIVILEGES;
+```
+
+`.env` の `DATABASE_URL` も同じ値になっていることを確認してください。
+`pnpm run db:check` で接続だけを確認できます。
 
 ### Q12: マイグレーションエラー
 

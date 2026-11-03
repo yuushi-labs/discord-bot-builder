@@ -66,8 +66,31 @@ npm install
 
 #### オプション A: ローカル MySQL
 
+最も簡単なのはセットアップスクリプトを使う方法です。`DATABASE_URL` に書いた
+ユーザー名・パスワードのままデータベースとユーザーを作成し、権限を付与します。
+
 ```bash
-# MySQL サーバーを起動
+# .env に DATABASE_URL を設定したうえで実行
+pnpm run db:setup
+
+# 既定の root 接続（mysql://root@localhost:3306、パスワードなし）が
+# ローカルの MySQL 設定と一致しない場合は ADMIN_DATABASE_URL を指定します。
+# root にパスワードがある場合もここで指定してください。
+ADMIN_DATABASE_URL=mysql://root:YOUR_ROOT_PASSWORD@localhost:3306 pnpm run db:setup
+
+# 管理者ユーザーが root 以外の場合はそのユーザー名に置き換えます
+ADMIN_DATABASE_URL=mysql://admin:YOUR_ADMIN_PASSWORD@localhost:3306 pnpm run db:setup
+
+# アプリが接続するクライアントホストを明示したい場合（既定は localhost・
+# 127.0.0.1・::1）。% はどのホストからの接続も許可するため、リモート DB で
+# 使う場合はファイアウォールやセキュリティグループで接続元を制限してください。
+DB_ACCOUNT_HOST=% pnpm run db:setup
+```
+
+手動で作成する場合は次のとおりです。`DATABASE_URL` の値と一致させてください。
+
+```bash
+# MySQL サーバーに接続
 mysql -u root -p
 
 # データベースを作成
@@ -76,6 +99,9 @@ CREATE USER 'bot_user'@'localhost' IDENTIFIED BY 'secure_password';
 GRANT ALL PRIVILEGES ON discord_bot_builder.* TO 'bot_user'@'localhost';
 FLUSH PRIVILEGES;
 ```
+
+> **メモ:** パスワードは `.env` の `DATABASE_URL` に書いた値と完全に一致させてください。
+> 一致していないと `Access denied for user 'bot_user'@'localhost'` でログインに失敗します。
 
 #### オプション B: クラウド DB（推奨）
 

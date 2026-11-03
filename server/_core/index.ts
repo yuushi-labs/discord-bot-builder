@@ -8,6 +8,7 @@ import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import { pingDatabase, closeDb } from "../db";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -61,6 +62,36 @@ async function startServer() {
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
   });
+
+  // Warn early with an actionable message if the database is misconfigured.
+  // Login and other DB-backed features will fail until this is resolved.
+  try {
+    await pingDatabase();
+    console.log("[Database] Connected");
+  } catch (error) {
+    console.error(
+      "[Database] Not available:",
+      error instanceof Error ? error.message : error
+    );
+  }
+
+  const shutdown = async () => {
+    // Keep-alive or HMR sockets can stall server.close(). Stop accepting new
+    // requests first, then close the pool; force-exit after a grace period.
+    const forceExit = setTimeout(() => {
+      server.closeAllConnections?.();
+      process.exit(1);
+    }, 5000);
+    forceExit.unref();
+    server.closeIdleConnections?.();
+    server.close(() => {
+      closeDb()
+        .catch(() => {})
+        .finally(() => process.exit(0));
+    });
+  };
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
 }
 
 startServer().catch(console.error);

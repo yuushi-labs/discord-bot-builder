@@ -12,6 +12,8 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "db:push": "drizzle-kit generate && drizzle-kit migrate",
+    "db:setup": "tsx scripts/setup-db.ts",
+    "db:check": "tsx scripts/check-db.ts",
     "tokens:migrate": "tsx server/migrate-tokens.ts"
   },
   "dependencies": {

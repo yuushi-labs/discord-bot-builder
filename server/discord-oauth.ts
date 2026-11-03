@@ -163,7 +163,13 @@ export async function handleDiscordCallback(req: Request, res: Response) {
 
     return res.redirect("/dashboard");
   } catch (error) {
-    console.error("Discord OAuth callback failed");
+    const cause =
+      error instanceof Error && error.cause ? error.cause : undefined;
+    console.error(
+      "Discord OAuth callback failed:",
+      error instanceof Error ? error.message : error,
+      cause instanceof Error ? `(cause: ${cause.message})` : ""
+    );
     return res.status(500).json({ error: "OAuth callback failed" });
   }
 }
