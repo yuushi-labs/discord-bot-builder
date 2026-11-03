@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { parseDatabaseUrl, setupDatabase } from "./setup-db";
+import {
+  parseDatabaseUrl,
+  resolveAccountHost,
+  setupDatabase,
+} from "./setup-db";
 
 describe("parseDatabaseUrl", () => {
   it("extracts the connection parts, decoding credentials", () => {
@@ -34,6 +38,33 @@ describe("parseDatabaseUrl", () => {
     expect(() =>
       parseDatabaseUrl("mysql://localhost:3306/discord_bot_builder")
     ).toThrow(/user name/);
+  });
+
+  it("does not leak credentials when the URL is invalid", () => {
+    const secret = "mysql://bot_user:hunter2@localhost:notaport/db";
+    let message = "";
+    try {
+      parseDatabaseUrl(secret);
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).not.toContain("hunter2");
+    expect(message).not.toContain(secret);
+  });
+});
+
+describe("resolveAccountHost", () => {
+  it("uses localhost for local servers", () => {
+    expect(resolveAccountHost("localhost")).toBe("localhost");
+    expect(resolveAccountHost("127.0.0.1")).toBe("localhost");
+  });
+
+  it("falls back to any host for remote servers", () => {
+    expect(resolveAccountHost("db.example")).toBe("%");
+  });
+
+  it("honours an explicit override", () => {
+    expect(resolveAccountHost("db.example", "10.0.0.5")).toBe("10.0.0.5");
   });
 });
 

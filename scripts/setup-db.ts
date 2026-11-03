@@ -20,7 +20,10 @@ export function parseDatabaseUrl(url: string) {
   try {
     parsed = new URL(url);
   } catch {
-    throw new Error(`Invalid DATABASE_URL: ${url}`);
+    // Do not echo the URL: it can embed the password.
+    throw new Error(
+      "Invalid DATABASE_URL: expected mysql://user:password@host:port/database"
+    );
   }
   const database = parsed.pathname.replace(/^\//, "");
   const host = parsed.hostname || "localhost";
@@ -32,13 +35,34 @@ export function parseDatabaseUrl(url: string) {
   return { host, port, user, password, database };
 }
 
-export async function setupDatabase(adminUrl: string, appUrl: string) {
+/**
+ * MySQL matches an account's host against the connecting client, not the server
+ * address in DATABASE_URL. Local connections match "localhost"; remote clients
+ * come from an address the script cannot know, so "any host" is the only
+ * workable default. Override with DB_ACCOUNT_HOST when the client host is known.
+ */
+export function resolveAccountHost(
+  serverHost: string,
+  override?: string
+): string {
+  if (override) return override;
+  return serverHost === "localhost" || serverHost === "127.0.0.1"
+    ? "localhost"
+    : "%";
+}
+
+export async function setupDatabase(
+  adminUrl: string,
+  appUrl: string,
+  accountHost?: string
+) {
   const target = parseDatabaseUrl(appUrl);
   if (!IDENTIFIER.test(target.database)) {
     throw new Error(
       `Unsafe database name "${target.database}"; use only letters, digits and underscores`
     );
   }
+  const grantHost = resolveAccountHost(target.host, accountHost);
 
   const connection = await mysql.createConnection(adminUrl);
   try {
@@ -46,8 +70,8 @@ export async function setupDatabase(adminUrl: string, appUrl: string) {
       `CREATE DATABASE IF NOT EXISTS ${mysql.escapeId(target.database)} ` +
         "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
     );
-    // Scope the account to the host it actually connects from.
-    const account = `${mysql.escape(target.user)}@${mysql.escape(target.host)}`;
+    // Scope the account to the client host it connects from, not the server address.
+    const account = `${mysql.escape(target.user)}@${mysql.escape(grantHost)}`;
     await connection.query(
       `CREATE USER IF NOT EXISTS ${account} IDENTIFIED BY ${mysql.escape(target.password)}`
     );
@@ -62,7 +86,7 @@ export async function setupDatabase(adminUrl: string, appUrl: string) {
     await connection.end();
   }
 
-  return target;
+  return { ...target, grantHost };
 }
 
 async function main() {
@@ -70,9 +94,13 @@ async function main() {
   if (!appUrl) throw new Error("DATABASE_URL is required");
   const adminUrl =
     process.env.ADMIN_DATABASE_URL || "mysql://root@localhost:3306";
-  const target = await setupDatabase(adminUrl, appUrl);
+  const target = await setupDatabase(
+    adminUrl,
+    appUrl,
+    process.env.DB_ACCOUNT_HOST
+  );
   console.log(
-    `Prepared database "${target.database}" and user "${target.user}"@${target.host}. ` +
+    `Prepared database "${target.database}" and user "${target.user}"@${target.grantHost}. ` +
       "Now run: pnpm run db:push"
   );
 }

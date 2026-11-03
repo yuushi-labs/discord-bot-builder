@@ -294,8 +294,10 @@ mysql -u root -p
 # ユーザーを確認
 SELECT User, Host FROM mysql.user;
 
-# ユーザーを作成または再作成（パスワードは .env の DATABASE_URL と一致させる）
-CREATE USER 'bot_user'@'localhost' IDENTIFIED BY 'secure_password';
+# ユーザーを作成（存在する場合はパスワードを DATABASE_URL と一致させる）
+# パスワードは .env の DATABASE_URL と完全に一致させること
+CREATE USER IF NOT EXISTS 'bot_user'@'localhost' IDENTIFIED BY 'secure_password';
+ALTER USER 'bot_user'@'localhost' IDENTIFIED BY 'secure_password';
 GRANT ALL PRIVILEGES ON discord_bot_builder.* TO 'bot_user'@'localhost';
 FLUSH PRIVILEGES;
 ```
