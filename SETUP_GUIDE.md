@@ -81,8 +81,9 @@ ADMIN_DATABASE_URL=mysql://root:YOUR_ROOT_PASSWORD@localhost:3306 pnpm run db:se
 # 管理者ユーザーが root 以外の場合はそのユーザー名に置き換えます
 ADMIN_DATABASE_URL=mysql://admin:YOUR_ADMIN_PASSWORD@localhost:3306 pnpm run db:setup
 
-# アプリが接続するクライアントホストを明示したい場合（既定は localhost と
-# 127.0.0.1、リモート DB では %）
+# アプリが接続するクライアントホストを明示したい場合（既定は localhost・
+# 127.0.0.1・::1）。% はどのホストからの接続も許可するため、リモート DB で
+# 使う場合はファイアウォールやセキュリティグループで接続元を制限してください。
 DB_ACCOUNT_HOST=% pnpm run db:setup
 ```
 

@@ -42,19 +42,31 @@ export function parseDatabaseUrl(url: string) {
 
 /**
  * MySQL matches an account's host against the connecting client, not the server
- * address in DATABASE_URL. Loopback clients can present as either "localhost" or
- * "127.0.0.1" (for example when skip_name_resolve is enabled), so provision both.
- * Remote clients come from an address the script cannot know, so "any host" is
- * the only workable default. Override with DB_ACCOUNT_HOST when it is known.
+ * address in DATABASE_URL. Loopback clients can present as "localhost",
+ * "127.0.0.1" or "::1" (for example when skip_name_resolve is enabled), so
+ * provision all three. Remote clients come from an address the script cannot
+ * know, so "any host" is the only workable default. Override with
+ * DB_ACCOUNT_HOST when it is known.
  */
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+
 export function resolveAccountHosts(
   serverHost: string,
   override?: string
 ): string[] {
   if (override) return [override];
-  return serverHost === "localhost" || serverHost === "127.0.0.1"
-    ? ["localhost", "127.0.0.1"]
+  return LOOPBACK_HOSTS.has(serverHost)
+    ? ["localhost", "127.0.0.1", "::1"]
     : ["%"];
+}
+
+/**
+ * A database-level GRANT treats "_" and "%" as wildcards unless partial_revokes
+ * is enabled, which would grant access to similarly named databases. Escape them
+ * before quoting. The database name is validated separately, so only "_" can occur.
+ */
+export function escapeGrantDatabase(database: string): string {
+  return mysql.escapeId(database.replace(/([_%])/g, "\\$1"));
 }
 
 export async function setupDatabase(
@@ -77,6 +89,7 @@ export async function setupDatabase(
         "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
     );
     // Scope each account to a client host the application may connect from.
+    const grantDatabase = escapeGrantDatabase(target.database);
     for (const grantHost of grantHosts) {
       const account = `${mysql.escape(target.user)}@${mysql.escape(grantHost)}`;
       await connection.query(
@@ -86,7 +99,7 @@ export async function setupDatabase(
         `ALTER USER ${account} IDENTIFIED BY ${mysql.escape(target.password)}`
       );
       await connection.query(
-        `GRANT ALL PRIVILEGES ON ${mysql.escapeId(target.database)}.* TO ${account}`
+        `GRANT ALL PRIVILEGES ON ${grantDatabase}.* TO ${account}`
       );
     }
     await connection.query("FLUSH PRIVILEGES");
@@ -111,6 +124,13 @@ async function main() {
     `Prepared database "${target.database}" and user "${target.user}" for hosts: ` +
       `${target.grantHosts.join(", ")}. Now run: pnpm run db:push`
   );
+  if (target.grantHosts.includes("%")) {
+    console.warn(
+      "Warning: an account that can connect from any host was created. " +
+        "Restrict access with firewall/security-group rules, or set DB_ACCOUNT_HOST " +
+        "to the application host."
+    );
+  }
 }
 
 if (

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  escapeGrantDatabase,
   parseDatabaseUrl,
   resolveAccountHosts,
   setupDatabase,
@@ -60,14 +61,29 @@ describe("parseDatabaseUrl", () => {
 });
 
 describe("resolveAccountHosts", () => {
-  it("provisions both loopback forms for local servers", () => {
+  it("provisions the loopback forms for local servers", () => {
     expect(resolveAccountHosts("localhost")).toEqual([
       "localhost",
       "127.0.0.1",
+      "::1",
     ]);
     expect(resolveAccountHosts("127.0.0.1")).toEqual([
       "localhost",
       "127.0.0.1",
+      "::1",
+    ]);
+  });
+
+  it("treats IPv6 loopback as local instead of any host", () => {
+    expect(resolveAccountHosts("[::1]")).toEqual([
+      "localhost",
+      "127.0.0.1",
+      "::1",
+    ]);
+    expect(resolveAccountHosts("::1")).toEqual([
+      "localhost",
+      "127.0.0.1",
+      "::1",
     ]);
   });
 
@@ -77,6 +93,14 @@ describe("resolveAccountHosts", () => {
 
   it("honours an explicit override", () => {
     expect(resolveAccountHosts("db.example", "10.0.0.5")).toEqual(["10.0.0.5"]);
+  });
+});
+
+describe("escapeGrantDatabase", () => {
+  it("escapes wildcards so grants do not match other databases", () => {
+    expect(escapeGrantDatabase("discord_bot_builder")).toBe(
+      "`discord\\_bot\\_builder`"
+    );
   });
 });
 

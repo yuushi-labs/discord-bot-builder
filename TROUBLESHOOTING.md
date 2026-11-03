@@ -300,6 +300,10 @@ CREATE USER IF NOT EXISTS 'bot_user'@'localhost' IDENTIFIED BY 'secure_password'
 ALTER USER 'bot_user'@'localhost' IDENTIFIED BY 'secure_password';
 GRANT ALL PRIVILEGES ON discord_bot_builder.* TO 'bot_user'@'localhost';
 
+CREATE USER IF NOT EXISTS 'bot_user'@'127.0.0.1' IDENTIFIED BY 'secure_password';
+ALTER USER 'bot_user'@'127.0.0.1' IDENTIFIED BY 'secure_password';
+GRANT ALL PRIVILEGES ON discord_bot_builder.* TO 'bot_user'@'127.0.0.1';
+
 # リモート DB（DB_ACCOUNT_HOST=% 相当）の場合はホストを % にする
 CREATE USER IF NOT EXISTS 'bot_user'@'%' IDENTIFIED BY 'secure_password';
 ALTER USER 'bot_user'@'%' IDENTIFIED BY 'secure_password';
@@ -307,6 +311,8 @@ GRANT ALL PRIVILEGES ON discord_bot_builder.* TO 'bot_user'@'%';
 
 FLUSH PRIVILEGES;
 ```
+
+ホスト部分は、`DB_ACCOUNT_HOST` を設定している場合はその値に置き換えてください。
 
 `.env` の `DATABASE_URL` も同じ値になっていることを確認してください。
 `pnpm run db:check` で接続だけを確認できます。
