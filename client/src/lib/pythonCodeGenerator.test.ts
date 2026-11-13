@@ -514,6 +514,45 @@ describe("Python Code Generator", () => {
     readWs.dispose();
   });
 
+  it("rejects a variable name that shadows a generated global (#14)", () => {
+    // `bot = "hi"` inside a handler rebinds the Client locally, so a later
+    // `bot.tree`/`bot.run` reference fails with AttributeError at runtime.
+    const event = workspace.newBlock("discord_on_ready");
+    const setVariable = workspace.newBlock("discord_set_variable");
+    setVariable.setFieldValue("bot", "VAR");
+    const text = workspace.newBlock("discord_text");
+    setText(text, "hi");
+    connect(setVariable, text, "VALUE");
+    event.getInput("DO")!.connection!.connect(setVariable.previousConnection!);
+    expect(() => generatePythonCode(workspace)).toThrow(/変数名「bot」/);
+  });
+
+  it("rejects an embed variable name that shadows a generated global (#14)", () => {
+    const event = workspace.newBlock("discord_on_ready");
+    const create = workspace.newBlock("discord_embed_create");
+    create.setFieldValue("discord", "VAR");
+    event.getInput("DO")!.connection!.connect(create.previousConnection!);
+    expect(() => generatePythonCode(workspace)).toThrow(
+      /Embed 変数名「discord」/
+    );
+  });
+
+  it("still generates for ordinary variable and embed names (#14)", () => {
+    const event = workspace.newBlock("discord_on_message");
+    const setVariable = workspace.newBlock("discord_set_variable");
+    setVariable.setFieldValue("counter", "VAR");
+    const number = workspace.newBlock("discord_number");
+    setNumber(number, 1);
+    connect(setVariable, number, "VALUE");
+    const create = workspace.newBlock("discord_embed_create");
+    create.setFieldValue("my_embed", "VAR");
+    event.getInput("DO")!.connection!.connect(setVariable.previousConnection!);
+    setVariable.nextConnection!.connect(create.previousConnection!);
+    const code = generatePythonCode(workspace);
+    expect(code).toContain("counter = 1");
+    expect(code).toContain("my_embed = discord.Embed(");
+  });
+
   it("resolves role names for computed string expressions", () => {
     const event = workspace.newBlock("discord_on_member_join");
     const addRole = workspace.newBlock("discord_add_role");
@@ -757,6 +796,38 @@ describe("Python Code Generator", () => {
       option.setFieldValue("TRUE", "REQUIRED");
       connectStatement(cmd, option, "OPTIONS");
       expect(() => generatePythonCode(workspace)).toThrow(/interaction/);
+    });
+
+    it("rejects option names that shadow a generated global (#14)", () => {
+      // A `bot` option emits `async def c(..., bot: str)`, so `bot.guilds` in
+      // the body refers to the option, not the Client (AttributeError).
+      for (const name of ["bot", "discord", "db_set", "asyncio"]) {
+        const ws = new Blockly.Workspace();
+        const cmd = ws.newBlock("discord_slash_command");
+        cmd.setFieldValue("c", "NAME");
+        const option = ws.newBlock("discord_slash_option");
+        option.setFieldValue(name, "NAME");
+        option.setFieldValue("TRUE", "REQUIRED");
+        connectStatement(cmd, option, "OPTIONS");
+        expect(
+          () => generatePythonCode(ws),
+          `expected option "${name}" to be rejected`
+        ).toThrow(/オプション名/);
+        ws.dispose();
+      }
+    });
+
+    it("still generates for an option name that is not reserved (#14)", () => {
+      const cmd = workspace.newBlock("discord_slash_command");
+      cmd.setFieldValue("greet", "NAME");
+      const option = workspace.newBlock("discord_slash_option");
+      option.setFieldValue("user_name", "NAME");
+      option.setFieldValue("TRUE", "REQUIRED");
+      connectStatement(cmd, option, "OPTIONS");
+      const code = generatePythonCode(workspace);
+      expect(code).toContain(
+        "async def greet(interaction: discord.Interaction, user_name: str):"
+      );
     });
 
     it("keeps a command named bot from shadowing the bot instance", () => {

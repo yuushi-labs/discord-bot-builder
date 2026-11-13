@@ -443,6 +443,22 @@ function pythonParameterName(value: string, label: string): string {
   }
 }
 
+/**
+ * Names the generated code already binds where a user value is emitted: the
+ * module-level names plus the `interaction` handler parameter. Reusing one as
+ * a slash option, variable or embed variable would shadow that binding inside
+ * the handler, so the code parses but fails at runtime (`AttributeError`).
+ * Reject it during generation with an actionable message instead.
+ */
+function assertNameNotReserved(name: string, label: string): void {
+  if (name === "interaction" || RESERVED_MODULE_NAMES.has(name)) {
+    throw new Error(
+      `${label}「${name}」は使用できません。生成コードが内部で使う名前と衝突し、` +
+        `実行時にエラーになります。別の名前を指定してください。`
+    );
+  }
+}
+
 /** Read a checkbox-style field (Blockly stores "TRUE"/"FALSE"). */
 function fieldChecked(block: Blockly.Block, field: string): boolean {
   return block.getFieldValue(field) === "TRUE";
@@ -672,13 +688,10 @@ function collectSlashOptions(
         "オプション名"
       );
       // The option name becomes a Python parameter and a describe() keyword, so
-      // it must be a valid identifier and unique within the command.
+      // it must be a valid identifier, unique within the command, and must not
+      // shadow a name the generated handler already uses.
       const name = pythonParameterName(raw, "オプション名");
-      if (name === "interaction") {
-        throw new Error(
-          "オプション名「interaction」は使用できません。生成コードが内部で使う引数名と衝突します。別の名前を指定してください。"
-        );
-      }
+      assertNameNotReserved(name, "オプション名");
       if (seen.has(name)) {
         throw new Error(
           `同じスラッシュコマンドに同名のオプション「${name}」が複数あります。オプション名は重複しないようにしてください。`
@@ -1105,6 +1118,7 @@ function statementBlockToCode(
       const varName = pythonIdentifier(block.getFieldValue("VAR") || "x", {
         assignment: true,
       });
+      assertNameNotReserved(varName, "変数名");
       const value = inputExpr(block, "VALUE", ctx, "None");
       ctx.variables.add(varName);
       writer.line(level, `${varName} = ${value}`);
@@ -1256,6 +1270,7 @@ function statementBlockToCode(
       const name = pythonIdentifier(fieldText(block, "VAR") || "embed", {
         assignment: true,
       });
+      assertNameNotReserved(name, "Embed 変数名");
       const title = inputExpr(block, "TITLE", ctx, '""');
       const description = inputExpr(block, "DESCRIPTION", ctx, '""');
       const color = inputExpr(block, "COLOR", ctx, "0x5865F2");
