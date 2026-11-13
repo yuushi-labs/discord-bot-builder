@@ -132,4 +132,110 @@ describe("Blockly Python export", () => {
     assertPythonSyntax(code);
     ws.dispose();
   });
+
+  it("generates a valid slash command with options, embed, button and modal", () => {
+    const ws = new Blockly.Workspace();
+    const cmd = ws.newBlock("discord_slash_command");
+    cmd.setFieldValue("greet", "NAME");
+    cmd.setFieldValue("Greet a user", "DESC");
+    const option = ws.newBlock("discord_slash_option");
+    option.setFieldValue("user", "NAME");
+    option.setFieldValue("The user", "DESC");
+    option.setFieldValue("user", "TYPE");
+    option.setFieldValue("TRUE", "REQUIRED");
+    cmd.getInput("OPTIONS")!.connection!.connect(option.previousConnection!);
+
+    const create = ws.newBlock("discord_embed_create");
+    create.setFieldValue("embed", "VAR");
+    const title = ws.newBlock("discord_text");
+    title.setFieldValue("Hello", "TEXT");
+    connectValue(create, "TITLE", title);
+    const addField = ws.newBlock("discord_embed_add_field");
+    addField.setFieldValue("embed", "VAR");
+    const fieldName = ws.newBlock("discord_text");
+    fieldName.setFieldValue("Field", "TEXT");
+    const fieldValue = ws.newBlock("discord_text");
+    fieldValue.setFieldValue("Value", "TEXT");
+    connectValue(addField, "NAME", fieldName);
+    connectValue(addField, "VALUE", fieldValue);
+
+    const button = ws.newBlock("discord_button_reply_view");
+    button.setFieldValue("primary", "STYLE");
+    const label = ws.newBlock("discord_text");
+    label.setFieldValue("Click", "TEXT");
+    connectValue(button, "LABEL", label);
+    const clickReply = ws.newBlock("discord_interaction_reply");
+    const clickText = ws.newBlock("discord_text");
+    clickText.setFieldValue("Clicked", "TEXT");
+    connectValue(clickReply, "MESSAGE", clickText);
+    button
+      .getInput("ON_CLICK")!
+      .connection!.connect(clickReply.previousConnection!);
+
+    const modal = ws.newBlock("discord_open_modal");
+    const modalTitle = ws.newBlock("discord_text");
+    modalTitle.setFieldValue("Feedback", "TEXT");
+    connectValue(modal, "TITLE", modalTitle);
+    const input = ws.newBlock("discord_modal_text_input");
+    input.setFieldValue("answer", "NAME");
+    input.setFieldValue("Your answer", "LABEL");
+    input.setFieldValue("paragraph", "STYLE");
+    modal.getInput("INPUTS")!.connection!.connect(input.previousConnection!);
+    const submit = ws.newBlock("discord_interaction_reply");
+    const value = ws.newBlock("discord_modal_input_value");
+    value.setFieldValue("answer", "NAME");
+    connectValue(submit, "MESSAGE", value);
+    modal
+      .getInput("ON_SUBMIT")!
+      .connection!.connect(submit.previousConnection!);
+
+    const replyEmbed = ws.newBlock("discord_interaction_reply_embed");
+    replyEmbed.setFieldValue("embed", "VAR");
+    replyEmbed.setFieldValue("TRUE", "EPHEMERAL");
+
+    connectStatement(cmd, "DO", create);
+    create.nextConnection!.connect(addField.previousConnection!);
+    addField.nextConnection!.connect(button.previousConnection!);
+    button.nextConnection!.connect(modal.previousConnection!);
+    modal.nextConnection!.connect(replyEmbed.previousConnection!);
+
+    const code = generatePythonCode(ws, { tokenExpr: '"test-token"' });
+    expect(code).toContain("from discord import app_commands");
+    expect(code).toContain('@bot.tree.command(name="greet"');
+    expect(code).toContain("await bot.tree.sync()");
+    expect(code).toContain("class ButtonView_0(discord.ui.View):");
+    expect(code).toContain("class Modal_1(discord.ui.Modal");
+    expect(code).toContain(
+      'await interaction.response.send_modal(Modal_1("Feedback"))'
+    );
+    assertPythonSyntax(code);
+    ws.dispose();
+  });
+
+  it("generates valid sqlite-backed code with bound parameters", () => {
+    const ws = new Blockly.Workspace();
+    const message = ws.newBlock("discord_on_message");
+    const set = ws.newBlock("discord_db_set");
+    const key = ws.newBlock("discord_text");
+    key.setFieldValue("points", "TEXT");
+    const value = ws.newBlock("discord_number");
+    value.setFieldValue(1, "NUM");
+    connectValue(set, "KEY", key);
+    connectValue(set, "VALUE", value);
+    const inc = ws.newBlock("discord_db_increment");
+    const incKey = ws.newBlock("discord_text");
+    incKey.setFieldValue("points", "TEXT");
+    connectValue(inc, "KEY", incKey);
+    connectStatement(message, "DO", set);
+    set.nextConnection!.connect(inc.previousConnection!);
+
+    const code = generatePythonCode(ws, { tokenExpr: '"test-token"' });
+    expect(code).toContain("import sqlite3");
+    expect(code).toContain('db_set("points", 1)');
+    expect(code).toContain('db_increment("points", 1)');
+    // A value coming from a user must never be interpolated into the SQL text.
+    expect(code).not.toMatch(/execute\([^)]*(%|\+)/);
+    assertPythonSyntax(code);
+    ws.dispose();
+  });
 });
