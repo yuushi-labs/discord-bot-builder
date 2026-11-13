@@ -50,7 +50,7 @@
     "@trpc/client": "^11.6.0",
     "@trpc/react-query": "^11.6.0",
     "@trpc/server": "^11.6.0",
-    "axios": "^1.12.0",
+    "axios": "^1.20.0",
     "blockly": "^11.2.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -64,7 +64,7 @@
     "framer-motion": "^12.23.22",
     "helmet": "^8.3.0",
     "input-otp": "^1.4.2",
-    "jose": "6.1.0",
+    "jose": "6.2.5",
     "lucide-react": "^0.453.0",
     "mysql2": "^3.15.0",
     "nanoid": "^5.1.5",
@@ -77,12 +77,12 @@
     "recharts": "^2.15.2",
     "sonner": "^2.0.7",
     "streamdown": "^1.4.0",
-    "superjson": "^1.13.3",
+    "superjson": "^2.2.3",
     "tailwind-merge": "^3.3.1",
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^1.1.2",
     "wouter": "^3.3.5",
-    "zod": "^4.1.12"
+    "zod": "^4.5.0"
   },
   "devDependencies": {
     "@builder.io/vite-plugin-jsx-loc": "^0.1.1",
@@ -116,7 +116,9 @@
       "wouter@3.7.1": "patches/wouter@3.7.1.patch"
     },
     "overrides": {
-      "tailwindcss>nanoid": "3.3.7"
+      "tailwindcss>nanoid": "3.3.7",
+      "raw-body@<4.0.0": "4.0.0",
+      "dompurify@<3.4.17": "3.4.17"
     }
   }
 }
