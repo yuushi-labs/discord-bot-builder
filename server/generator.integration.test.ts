@@ -80,4 +80,56 @@ describe("Blockly Python export", () => {
     expect(generatePythonCode(ws)).not.toContain("await");
     ws.dispose();
   });
+
+  it("resolves role names and keeps the generated code valid", () => {
+    const ws = new Blockly.Workspace();
+    const join = ws.newBlock("discord_on_member_join");
+    const addRole = ws.newBlock("discord_add_role");
+    const role = ws.newBlock("discord_text");
+    role.setFieldValue("Member", "TEXT");
+    connectValue(addRole, "ROLE", role);
+    connectStatement(join, "DO", addRole);
+    const code = generatePythonCode(ws);
+    expect(code).toContain(
+      'await member.add_roles(discord.utils.get(member.guild.roles, name="Member"))'
+    );
+    assertPythonSyntax(code);
+    ws.dispose();
+  });
+
+  it("escapes a lone carriage return without breaking the string", () => {
+    const ws = new Blockly.Workspace();
+    const message = ws.newBlock("discord_on_message");
+    const send = ws.newBlock("discord_send_message");
+    const text = ws.newBlock("discord_text");
+    text.setFieldValue("a\rb", "TEXT");
+    connectValue(send, "CHANNEL", ws.newBlock("discord_get_channel"));
+    connectValue(send, "MESSAGE", text);
+    connectStatement(message, "DO", send);
+    const code = generatePythonCode(ws);
+    expect(code).toContain('"a\\nb"');
+    assertPythonSyntax(code);
+    ws.dispose();
+  });
+
+  it("resolves a computed role name and keeps the generated code valid", () => {
+    const ws = new Blockly.Workspace();
+    const join = ws.newBlock("discord_on_member_join");
+    const removeRole = ws.newBlock("discord_remove_role");
+    const concat = ws.newBlock("discord_string_concat");
+    const a = ws.newBlock("discord_text");
+    const b = ws.newBlock("discord_text");
+    a.setFieldValue("Mem", "TEXT");
+    b.setFieldValue("ber", "TEXT");
+    connectValue(concat, "A", a);
+    connectValue(concat, "B", b);
+    connectValue(removeRole, "ROLE", concat);
+    connectStatement(join, "DO", removeRole);
+    const code = generatePythonCode(ws);
+    expect(code).toContain(
+      'await member.remove_roles(discord.utils.get(member.guild.roles, name="Mem" + "ber"))'
+    );
+    assertPythonSyntax(code);
+    ws.dispose();
+  });
 });

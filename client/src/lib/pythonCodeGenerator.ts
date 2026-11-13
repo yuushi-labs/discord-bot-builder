@@ -135,10 +135,150 @@ const MODULE_LEVEL_TYPES = new Set([
 ]);
 
 function escapePythonString(value: string): string {
-  return value
-    .replace(/\\/g, "\\\\")
-    .replace(/"/g, '\\"')
-    .replace(/\r?\n/g, "\\n");
+  return (
+    value
+      .replace(/\\/g, "\\\\")
+      .replace(/"/g, '\\"')
+      // Normalize CRLF, a lone CR and LF alike; a bare CR would otherwise leave an
+      // unterminated string literal in the generated source.
+      .replace(/\r\n?|\n/g, "\\n")
+  );
+}
+
+/** Python keywords that cannot be used as a variable name. */
+const PYTHON_RESERVED_WORDS = new Set([
+  "False",
+  "None",
+  "True",
+  "and",
+  "as",
+  "assert",
+  "async",
+  "await",
+  "break",
+  "class",
+  "continue",
+  "def",
+  "del",
+  "elif",
+  "else",
+  "except",
+  "finally",
+  "for",
+  "from",
+  "global",
+  "if",
+  "import",
+  "in",
+  "is",
+  "lambda",
+  "nonlocal",
+  "not",
+  "or",
+  "pass",
+  "raise",
+  "return",
+  "try",
+  "while",
+  "with",
+  "yield",
+]);
+
+// Built at runtime so the `u` flag does not trip the ES5 default target check.
+// CPython uses the XID_Start/XID_Continue properties (a subset of
+// ID_Start/ID_Continue), so a name like U+037A must be rejected.
+const PYTHON_IDENTIFIER = new RegExp(
+  "^[\\p{XID_Start}_][\\p{XID_Continue}]*$",
+  "u"
+);
+
+/** Valid identifiers that still cannot be used as an assignment target. */
+const PYTHON_RESERVED_ASSIGNMENTS = new Set(["__debug__"]);
+
+/**
+ * Validate a user-entered name as a usable Python identifier. Emitting an
+ * invalid name as-is (e.g. `my var`, a keyword, or a leading digit) produces
+ * code that fails to compile, so surface it as an error instead.
+ *
+ * CPython checks both the original spelling and its NFKC-normalized form
+ * against the XID properties, so `Ⓐ` (normalizes to `A`) is rejected while a
+ * fullwidth letter is accepted.
+ */
+function pythonIdentifier(
+  name: string,
+  options: { assignment?: boolean } = {}
+): string {
+  const normalized = name.normalize("NFKC");
+  if (options.assignment && PYTHON_RESERVED_ASSIGNMENTS.has(normalized)) {
+    throw new Error(
+      `変数名「${name}」には代入できません（Python の予約名）。別の名前を指定してください。`
+    );
+  }
+  if (
+    !PYTHON_IDENTIFIER.test(name) ||
+    !PYTHON_IDENTIFIER.test(normalized) ||
+    PYTHON_RESERVED_WORDS.has(normalized)
+  ) {
+    throw new Error(
+      `変数名「${name}」は Python の変数名として使えません。英字または「_」で始まり、` +
+        `英数字と「_」のみを含む名前（予約語以外）を指定してください。`
+    );
+  }
+  return name;
+}
+
+/**
+ * A scoped value (message/author/channel/guild) only exists inside certain
+ * events. Referencing one where it does not exist would emit code that always
+ * raises at runtime, so fail generation with an actionable message instead.
+ */
+function requireScope(value: string | null, label: string): string {
+  if (value === null) {
+    throw new Error(
+      `「${label}」はこのイベントでは利用できません。その値を持つイベント` +
+        `（メッセージ受信など）の中でのみ使用できます。`
+    );
+  }
+  return value;
+}
+
+/**
+ * Resolve a statement input, falling back to a scoped value only when the input
+ * is unconnected. The fallback is evaluated lazily so a connected value never
+ * triggers the scoped-value check.
+ */
+function scopedInput(
+  block: Blockly.Block,
+  inputName: string,
+  ctx: CodeContext,
+  scoped: string | null,
+  label: string
+): string {
+  const target = block.getInputTargetBlock(inputName);
+  if (target) {
+    const rendered = valueBlockToCode(target, ctx);
+    if (rendered !== null) return rendered;
+  }
+  return requireScope(scoped, label);
+}
+
+/**
+ * Resolve a role argument for `add_roles`/`remove_roles`. Those methods call
+ * `role.id`, so a bare string raises `AttributeError` at runtime. A connected
+ * expression is therefore treated as a role name and looked up in the member's
+ * guild; only a block that already yields a role object (currently none) would
+ * be passed through unchanged.
+ */
+function roleArgument(
+  block: Blockly.Block,
+  ctx: CodeContext,
+  member: string
+): string {
+  const target = block.getInputTargetBlock("ROLE");
+  if (!target) return "None";
+  const rendered = valueBlockToCode(target, ctx);
+  if (rendered === null) return "None";
+  return `discord.utils.get(${member}.guild.roles, name=${rendered})`;
 }
 
 function inputExpr(
@@ -213,18 +353,18 @@ function valueBlockToCode(
     case "discord_logic_not":
       return `not ${operandExpr(block, "A", ctx, "False")}`;
     case "discord_get_variable":
-      return block.getFieldValue("VAR") || "x";
+      return pythonIdentifier(block.getFieldValue("VAR") || "x");
     case "discord_get_message":
-      return ctx.scope.message ?? "None";
+      return requireScope(ctx.scope.message, "メッセージ");
     case "discord_get_author":
-      return ctx.scope.author ?? "None";
+      return requireScope(ctx.scope.author, "メッセージ送信者");
     case "discord_get_channel":
-      return ctx.scope.channel ?? "None";
+      return requireScope(ctx.scope.channel, "メッセージチャンネル");
     case "discord_get_guild":
-      return ctx.scope.guild ?? "None";
+      return requireScope(ctx.scope.guild, "サーバー");
     case "discord_get_message_content": {
       ctx.usesMessageContent = true;
-      return ctx.scope.message ? `${ctx.scope.message}.content` : "None";
+      return `${requireScope(ctx.scope.message, "メッセージ内容")}.content`;
     }
     case "discord_get_all_servers":
       return "bot.guilds";
@@ -286,22 +426,24 @@ function statementBlockToCode(
 ): void {
   switch (block.type) {
     case "discord_send_message": {
-      const channel = inputExpr(
+      const channel = scopedInput(
         block,
         "CHANNEL",
         ctx,
-        ctx.scope.channel ?? "None"
+        ctx.scope.channel,
+        "メッセージチャンネル"
       );
       const message = inputExpr(block, "MESSAGE", ctx, '""');
       writer.line(level, `await ${channel}.send(${message})`);
       return;
     }
     case "discord_send_embed": {
-      const channel = inputExpr(
+      const channel = scopedInput(
         block,
         "CHANNEL",
         ctx,
-        ctx.scope.channel ?? "None"
+        ctx.scope.channel,
+        "メッセージチャンネル"
       );
       const title = inputExpr(block, "TITLE", ctx, '""');
       const description = inputExpr(block, "DESCRIPTION", ctx, '""');
@@ -314,76 +456,83 @@ function statementBlockToCode(
       return;
     }
     case "discord_edit_message": {
-      const message = inputExpr(
+      const message = scopedInput(
         block,
         "MESSAGE",
         ctx,
-        ctx.scope.message ?? "None"
+        ctx.scope.message,
+        "メッセージ"
       );
       const content = inputExpr(block, "NEW_CONTENT", ctx, '""');
       writer.line(level, `await ${message}.edit(content=${content})`);
       return;
     }
     case "discord_delete_message": {
-      const message = inputExpr(
+      const message = scopedInput(
         block,
         "MESSAGE",
         ctx,
-        ctx.scope.message ?? "None"
+        ctx.scope.message,
+        "メッセージ"
       );
       writer.line(level, `await ${message}.delete()`);
       return;
     }
     case "discord_add_reaction": {
-      const message = inputExpr(
+      const message = scopedInput(
         block,
         "MESSAGE",
         ctx,
-        ctx.scope.message ?? "None"
+        ctx.scope.message,
+        "メッセージ"
       );
       const emoji = inputExpr(block, "EMOJI", ctx, '""');
       writer.line(level, `await ${message}.add_reaction(${emoji})`);
       return;
     }
     case "discord_add_role": {
-      const member = inputExpr(
+      const member = scopedInput(
         block,
         "MEMBER",
         ctx,
-        ctx.scope.author ?? "None"
+        ctx.scope.author,
+        "メンバー"
       );
-      const role = inputExpr(block, "ROLE", ctx, "None");
+      const role = roleArgument(block, ctx, member);
       writer.line(level, `await ${member}.add_roles(${role})`);
       return;
     }
     case "discord_remove_role": {
-      const member = inputExpr(
+      const member = scopedInput(
         block,
         "MEMBER",
         ctx,
-        ctx.scope.author ?? "None"
+        ctx.scope.author,
+        "メンバー"
       );
-      const role = inputExpr(block, "ROLE", ctx, "None");
+      const role = roleArgument(block, ctx, member);
       writer.line(level, `await ${member}.remove_roles(${role})`);
       return;
     }
     case "discord_ban_member": {
-      const member = inputExpr(
+      const member = scopedInput(
         block,
         "MEMBER",
         ctx,
-        ctx.scope.author ?? "None"
+        ctx.scope.author,
+        "メンバー"
       );
       const reason = inputExpr(block, "REASON", ctx, '""');
       writer.line(level, `await ${member}.ban(reason=${reason})`);
       return;
     }
     case "discord_kick_member": {
-      const member = inputExpr(
+      const member = scopedInput(
         block,
         "MEMBER",
         ctx,
-        ctx.scope.author ?? "None"
+        ctx.scope.author,
+        "メンバー"
       );
       const reason = inputExpr(block, "REASON", ctx, '""');
       writer.line(level, `await ${member}.kick(reason=${reason})`);
@@ -395,7 +544,9 @@ function statementBlockToCode(
       return;
     }
     case "discord_set_variable": {
-      const varName = block.getFieldValue("VAR") || "x";
+      const varName = pythonIdentifier(block.getFieldValue("VAR") || "x", {
+        assignment: true,
+      });
       const value = inputExpr(block, "VALUE", ctx, "None");
       ctx.variables.add(varName);
       writer.line(level, `${varName} = ${value}`);
@@ -430,11 +581,12 @@ function statementBlockToCode(
     }
     case "discord_conditional_message": {
       const condition = inputExpr(block, "CONDITION", ctx, "True");
-      const channel = inputExpr(
+      const channel = scopedInput(
         block,
         "CHANNEL",
         ctx,
-        ctx.scope.channel ?? "None"
+        ctx.scope.channel,
+        "メッセージチャンネル"
       );
       const message = inputExpr(block, "MESSAGE", ctx, '""');
       writer.line(level, `if ${condition}:`);
@@ -614,7 +766,11 @@ export function generatePythonCode(
 
   for (const block of workspace.getTopBlocks(true)) {
     if (isEventBlock(block.type)) {
-      if (ctx.events.some(event => event.name === EVENT_SIGNATURES[block.type].name)) {
+      if (
+        ctx.events.some(
+          event => event.name === EVENT_SIGNATURES[block.type].name
+        )
+      ) {
         throw new Error("同じイベントのブロックは1つだけ配置してください");
       }
       ctx.events.push(buildEventHandler(block, ctx));

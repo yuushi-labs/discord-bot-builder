@@ -120,13 +120,11 @@ describe("Python Code Generator", () => {
     setNumber(interval, 60);
     connect(schedule, interval, "INTERVAL");
 
-    const send = workspace.newBlock("discord_send_message");
+    const print = workspace.newBlock("discord_print");
     const text = workspace.newBlock("discord_text");
-    const channel = workspace.newBlock("discord_get_channel");
     setText(text, "tick");
-    connect(send, text, "MESSAGE");
-    connect(send, channel, "CHANNEL");
-    schedule.getInput("DO")!.connection!.connect(send.previousConnection!);
+    connect(print, text, "TEXT");
+    schedule.getInput("DO")!.connection!.connect(print.previousConnection!);
 
     const code = generatePythonCode(workspace);
     expect(code).toContain("from discord.ext import tasks");
@@ -173,13 +171,11 @@ describe("Python Code Generator", () => {
 
   it("checks every minute for a non-literal daily schedule time", () => {
     const schedule = workspace.newBlock("discord_schedule_daily");
-    const send = workspace.newBlock("discord_send_message");
+    const print = workspace.newBlock("discord_print");
     const text = workspace.newBlock("discord_text");
-    const channel = workspace.newBlock("discord_get_channel");
     setText(text, "tick");
-    connect(send, text, "MESSAGE");
-    connect(send, channel, "CHANNEL");
-    schedule.getInput("DO")!.connection!.connect(send.previousConnection!);
+    connect(print, text, "TEXT");
+    schedule.getInput("DO")!.connection!.connect(print.previousConnection!);
 
     const code = generatePythonCode(workspace);
     expect(code).toContain("@tasks.loop(minutes=1)");
@@ -202,7 +198,7 @@ describe("Python Code Generator", () => {
   });
 
   it("escapes quotes and newlines in text blocks", () => {
-    const event = workspace.newBlock("discord_on_ready");
+    const event = workspace.newBlock("discord_on_message");
     const send = workspace.newBlock("discord_send_message");
     const text = workspace.newBlock("discord_text");
     const channel = workspace.newBlock("discord_get_channel");
@@ -373,9 +369,13 @@ describe("Python Code Generator", () => {
       const condition = workspace.newBlock("discord_if");
       const schedule = workspace.newBlock(type);
       event.getInput("DO")!.connection!.connect(condition.previousConnection!);
-      condition.getInput("DO")!.connection!.connect(schedule.previousConnection!);
+      condition
+        .getInput("DO")!
+        .connection!.connect(schedule.previousConnection!);
       const code = generatePythonCode(workspace);
-      expect(code).toMatch(/    if False:\n        if not (scheduled_task|daily_task)\.is_running\(\):\n            \1\.start\(\)/);
+      expect(code).toMatch(
+        /    if False:\n        if not (scheduled_task|daily_task)\.is_running\(\):\n            \1\.start\(\)/
+      );
       expect(code).not.toContain("async def on_ready");
     }
   );
@@ -385,7 +385,224 @@ describe("Python Code Generator", () => {
     const time = workspace.newBlock("discord_get_variable");
     time.setFieldValue("daily_time", "VAR");
     schedule.getInput("TIME")!.connection!.connect(time.outputConnection!);
-    expect(generatePythonCode(workspace)).toContain("if now == str(daily_time).strip().zfill(5):");
+    expect(generatePythonCode(workspace)).toContain(
+      "if now == str(daily_time).strip().zfill(5):"
+    );
   });
 
+  it("rejects variable names that are not valid Python identifiers", () => {
+    const invalidNames = ["my var", "for", "class", "1x", "x-y", "a.b"];
+    for (const name of invalidNames) {
+      const ws = new Blockly.Workspace();
+      const event = ws.newBlock("discord_on_message");
+      const setVariable = ws.newBlock("discord_set_variable");
+      setVariable.setFieldValue(name, "VAR");
+      const text = ws.newBlock("discord_text");
+      setText(text, "1");
+      connect(setVariable, text, "VALUE");
+      event
+        .getInput("DO")!
+        .connection!.connect(setVariable.previousConnection!);
+      expect(
+        () => generatePythonCode(ws),
+        `expected "${name}" to be rejected`
+      ).toThrow(/変数名/);
+      ws.dispose();
+    }
+  });
+
+  it("accepts valid and unicode variable names", () => {
+    const names = ["valid_name", "名前"];
+    for (const name of names) {
+      const ws = new Blockly.Workspace();
+      const event = ws.newBlock("discord_on_message");
+      const setVariable = ws.newBlock("discord_set_variable");
+      setVariable.setFieldValue(name, "VAR");
+      const text = ws.newBlock("discord_text");
+      setText(text, "hi");
+      connect(setVariable, text, "VALUE");
+      const getVariable = ws.newBlock("discord_get_variable");
+      getVariable.setFieldValue(name, "VAR");
+      const print = ws.newBlock("discord_print");
+      connect(print, getVariable, "TEXT");
+      event
+        .getInput("DO")!
+        .connection!.connect(setVariable.previousConnection!);
+      setVariable.nextConnection!.connect(print.previousConnection!);
+
+      const code = generatePythonCode(ws);
+      expect(code).toContain(`${name} = "hi"`);
+      expect(code).toContain(`print(${name})`);
+      ws.dispose();
+    }
+  });
+
+  it("rejects identifiers CPython refuses but the base ID properties accept", () => {
+    // U+037A fails XID but passes ID_Start; U+24B6 (Ⓐ) normalizes to "A"
+    // yet CPython still rejects the original spelling.
+    const invalidNames = ["\u037a", "\u24b6", "\u2460"];
+    for (const name of invalidNames) {
+      for (const kind of ["set", "get"] as const) {
+        const ws = new Blockly.Workspace();
+        const event = ws.newBlock("discord_on_message");
+        const block =
+          kind === "set"
+            ? ws.newBlock("discord_set_variable")
+            : ws.newBlock("discord_get_variable");
+        block.setFieldValue(name, "VAR");
+        if (kind === "set") {
+          const text = ws.newBlock("discord_text");
+          setText(text, "1");
+          connect(block, text, "VALUE");
+          event.getInput("DO")!.connection!.connect(block.previousConnection!);
+        } else {
+          const print = ws.newBlock("discord_print");
+          connect(print, block, "TEXT");
+          event.getInput("DO")!.connection!.connect(print.previousConnection!);
+        }
+        expect(
+          () => generatePythonCode(ws),
+          `expected ${kind} "${name}" to be rejected`
+        ).toThrow(/変数名/);
+        ws.dispose();
+      }
+    }
+  });
+
+  it("rejects __debug__ as an assignment target but allows reading it", () => {
+    const ws = new Blockly.Workspace();
+    const event = ws.newBlock("discord_on_message");
+    const setVariable = ws.newBlock("discord_set_variable");
+    setVariable.setFieldValue("__debug__", "VAR");
+    const text = ws.newBlock("discord_text");
+    setText(text, "1");
+    connect(setVariable, text, "VALUE");
+    event.getInput("DO")!.connection!.connect(setVariable.previousConnection!);
+    expect(() => generatePythonCode(ws)).toThrow(/代入/);
+    ws.dispose();
+
+    // Reading __debug__ is legal Python, so a get-only workspace must generate.
+    const readWs = new Blockly.Workspace();
+    const readEvent = readWs.newBlock("discord_on_message");
+    const print = readWs.newBlock("discord_print");
+    const getVariable = readWs.newBlock("discord_get_variable");
+    getVariable.setFieldValue("__debug__", "VAR");
+    connect(print, getVariable, "TEXT");
+    readEvent.getInput("DO")!.connection!.connect(print.previousConnection!);
+    expect(generatePythonCode(readWs)).toContain("print(__debug__)");
+    readWs.dispose();
+  });
+
+  it("resolves role names for computed string expressions", () => {
+    const event = workspace.newBlock("discord_on_member_join");
+    const addRole = workspace.newBlock("discord_add_role");
+    const concat = workspace.newBlock("discord_string_concat");
+    const a = workspace.newBlock("discord_text");
+    const b = workspace.newBlock("discord_text");
+    setText(a, "Mem");
+    setText(b, "ber");
+    connect(concat, a, "A");
+    connect(concat, b, "B");
+    connect(addRole, concat, "ROLE");
+    event.getInput("DO")!.connection!.connect(addRole.previousConnection!);
+
+    const code = generatePythonCode(workspace);
+    expect(code).toContain(
+      'await member.add_roles(discord.utils.get(member.guild.roles, name="Mem" + "ber"))'
+    );
+  });
+
+  it("resolves role names via discord.utils.get on the member's guild", () => {
+    const event = workspace.newBlock("discord_on_member_join");
+    const addRole = workspace.newBlock("discord_add_role");
+    const role = workspace.newBlock("discord_text");
+    setText(role, "Member");
+    connect(addRole, role, "ROLE");
+    event.getInput("DO")!.connection!.connect(addRole.previousConnection!);
+
+    const code = generatePythonCode(workspace);
+    expect(code).toContain(
+      'await member.add_roles(discord.utils.get(member.guild.roles, name="Member"))'
+    );
+    expect(code).not.toContain('add_roles("Member")');
+  });
+
+  it("resolves role names for role removal too", () => {
+    const event = workspace.newBlock("discord_on_member_join");
+    const removeRole = workspace.newBlock("discord_remove_role");
+    const role = workspace.newBlock("discord_text");
+    setText(role, "Member");
+    connect(removeRole, role, "ROLE");
+    event.getInput("DO")!.connection!.connect(removeRole.previousConnection!);
+
+    const code = generatePythonCode(workspace);
+    expect(code).toContain(
+      'await member.remove_roles(discord.utils.get(member.guild.roles, name="Member"))'
+    );
+  });
+
+  it("fails generation when a scoped getter is used outside its event", () => {
+    const cases: Array<{ event: string; block: string }> = [
+      { event: "discord_on_ready", block: "discord_get_channel" },
+      { event: "discord_on_ready", block: "discord_get_message" },
+      { event: "discord_on_ready", block: "discord_get_author" },
+      { event: "discord_on_member_join", block: "discord_get_message_content" },
+    ];
+    for (const { event, block } of cases) {
+      const ws = new Blockly.Workspace();
+      const handler = ws.newBlock(event);
+      const print = ws.newBlock("discord_print");
+      connect(print, ws.newBlock(block), "TEXT");
+      handler.getInput("DO")!.connection!.connect(print.previousConnection!);
+      expect(
+        () => generatePythonCode(ws),
+        `expected ${block} in ${event} to be rejected`
+      ).toThrow(/利用できません/);
+      ws.dispose();
+    }
+  });
+
+  it("fails generation when a channel action runs outside a channel scope", () => {
+    const ws = new Blockly.Workspace();
+    const ready = ws.newBlock("discord_on_ready");
+    const send = ws.newBlock("discord_send_message");
+    const text = ws.newBlock("discord_text");
+    setText(text, "hi");
+    connect(send, text, "MESSAGE");
+    ready.getInput("DO")!.connection!.connect(send.previousConnection!);
+    expect(() => generatePythonCode(ws)).toThrow(/利用できません/);
+    ws.dispose();
+  });
+
+  it("still allows an explicit channel even outside a channel scope", () => {
+    const ws = new Blockly.Workspace();
+    const ready = ws.newBlock("discord_on_ready");
+    const send = ws.newBlock("discord_send_message");
+    const text = ws.newBlock("discord_text");
+    setText(text, "hi");
+    connect(send, text, "MESSAGE");
+    // channel_id is a variable the user can define, so this must not throw.
+    const channelVar = ws.newBlock("discord_get_variable");
+    channelVar.setFieldValue("channel_id", "VAR");
+    connect(send, channelVar, "CHANNEL");
+    ready.getInput("DO")!.connection!.connect(send.previousConnection!);
+    const code = generatePythonCode(ws);
+    expect(code).toContain("await channel_id.send");
+    ws.dispose();
+  });
+
+  it("escapes a lone carriage return in text blocks", () => {
+    const event = workspace.newBlock("discord_on_message");
+    const send = workspace.newBlock("discord_send_message");
+    const text = workspace.newBlock("discord_text");
+    const channel = workspace.newBlock("discord_get_channel");
+    setText(text, "a\rb");
+    connect(send, text, "MESSAGE");
+    connect(send, channel, "CHANNEL");
+    event.getInput("DO")!.connection!.connect(send.previousConnection!);
+
+    const code = generatePythonCode(workspace);
+    expect(code).toContain('"a\\nb"');
+    expect(code).not.toContain("\r");
+  });
 });
