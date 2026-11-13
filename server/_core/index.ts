@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express from "express";
+import helmet from "helmet";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
@@ -32,6 +33,16 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 async function startServer() {
   const app = express();
   const server = createServer(app);
+  app.use(
+    helmet({
+      // Vite (dev) injects the React Refresh preamble as an inline script, and the
+      // default CSP blocks inline scripts. Keep the CSP for production, where the
+      // app is served as static files, and skip it in development so `pnpm dev`
+      // keeps working.
+      contentSecurityPolicy:
+        process.env.NODE_ENV === "development" ? false : undefined,
+    })
+  );
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
